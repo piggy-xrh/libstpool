@@ -201,7 +201,7 @@ struct stpool_stat_t {
 	int minthreads;              /* Min servering threads number */
 	int curthreads;              /* The number of threads exisiting in the pool */
 	int curthreads_active;       /* The number of threads who is scheduling tasks */
-	int curthreads_dying;        /* The number of threads who has been marked died by @stpool_adjust(_abs) */
+	int curthreads_dying;        /* The number of threads who has been marked died by @stpool_adjust(_abs)/@stpool_flush */
 	long acttimeo;               /* Max rest time of the threads (ms) */
 	size_t tasks_peak;           /* The peak of the tasks number */
 	size_t threads_peak;         /* The peak of the threads number */

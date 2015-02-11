@@ -129,6 +129,7 @@ static int  tpool_gettask(struct tpool_t *pool, struct tpool_thread_t *self);
 static int  tpool_ev_busy(struct tpool_t *pool);
 static int  tpool_ev_wait_l(struct tpool_t *pool, long ms, int return_if_wokeup);
 
+/* Anonymous tasks */
 struct tpool_task_t {
 	struct task_t task;
 	int (*task_run)(void *arg);
@@ -178,20 +179,17 @@ tpool_extract(struct task_t *task, void **task_run, void **task_complete, void *
 			*task_run = (void *)tptask->task_run;
 		
 		if (task_complete)
-			*task_complete = (void *)tptask->task_complete;
-		
-		if (task_arg)
-			*task_arg = task->task_arg;	
+			*task_complete = (void *)tptask->task_complete;	
 	} else {
 		if (task_run)
 			*task_run = (void *)task->task_run;
 		
 		if (task_complete)
 			*task_complete = (void *)task->task_complete;
-		
-		if (task_arg)
-			*task_arg = task->task_arg;
-	}
+	}	
+	
+	if (task_arg)
+		*task_arg = task->task_arg;
 }
 
 static void 
@@ -2324,7 +2322,6 @@ tpool_add_threads(struct tpool_t *pool, int nthreads, long lflags /* reserved */
 
 static void 
 tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {	
-	int curthreads_pool_free, nthreads = 0;
 	int ntasks_pending = pool->paused ? XLIST_SIZE(&pool->dispatch_q) : pool->npendings;
 
 	/* Check the pool status */
@@ -2402,7 +2399,7 @@ tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {
 	
 	/* Verify the @maxthreads */
 	if (pool->maxthreads > REAL(pool)) {
-		curthreads_pool_free = REAL(pool) + pool->nthreads_going_rescheduling 
+		int curthreads_pool_free = REAL(pool) + pool->nthreads_going_rescheduling 
 			+ pool->nthreads_dying_run - RUNNING(pool);
 		assert(curthreads_pool_free >= 0);
 		
@@ -2414,7 +2411,7 @@ tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {
 			/* Compute the number of threads who is should be created
 			 * according to the @limit_threads_free.
 			 */
-			nthreads = pool->limit_threads_free - curthreads_pool_free;	
+			int nthreads = pool->limit_threads_free - curthreads_pool_free;	
 			assert(n >= 0);
 			if (n < nthreads)
 				nthreads = n;
