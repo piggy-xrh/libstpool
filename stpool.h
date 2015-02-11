@@ -14,9 +14,13 @@
 #define EXPORT
 #endif
 
-/* Email: piggy_xrh@163.com 
- *      Stpool is portable and efficient tasks pool library, it can works on diferent 
+/* Author: piggy_xrh@163.com 
+ *	  Stpool is portable and efficient tasks pool library, it can works on diferent 
  * platforms such as Windows, linux, unix and ARM.  
+ *
+ *    If you have any troubles or questions on using the library, contact me.
+ *
+ * 	  ( Email: piggy_xrh@163.com  QQ: 1169732280 )
  */
 
 /* Error code */
@@ -58,6 +62,19 @@ enum {
 	 *  But the code returned by @task.task_complete is not zero).
 	 */
 	STPOOL_TASK_ERR_DISABLE_RESCHEDULE = 6,
+	
+	/* The task has been discarded by the filter 
+	 *
+	 * (see @stpool_event_set for more details) 
+	 */
+	STPOOL_TASK_ERR_FILTER_DISCARD = 7,
+	
+	/* The task has been rejected by the filter since the pool is busy now, user can 
+	 * call @stpool_event_wait(hp, ms) to wait on the pool.
+	 *
+	 * (see @stpool_event_set for more details) 
+	 */
+	STPOOL_TASK_ERR_FILTER_WAIT = 8,
 };
 
 /* Priority attribute of the task */
@@ -326,7 +343,7 @@ EXPORT void stpool_adjust(HPOOL hp, int maxthreads, int minthreads);
 
 /*@stpool_flush
  *     Mark all unused threads died. it's not recommented to do this since
- * the pool know when to shutdown the threads.
+ * the pool knows when to shutdown the threads.
  * 	
  * 	Arguments:
  *    @hp   [in]  the pool handle
@@ -341,10 +358,10 @@ EXPORT void stpool_adjust(HPOOL hp, int maxthreads, int minthreads);
 EXPORT int  stpool_flush(HPOOL hp);
 
 /*@stpool_adjust_wait
- *    @stpool_adjust and @stpool_adjust_abs do not block, If 
- * users want to make sure that the pool's status is consistent
- * with the param they have set, some threads may have been marked
- * died. and the threads who has been marked died will exit imediately
+ *    @stpool_adjust and @stpool_adjust_abs do not block, If users 
+ * want to make sure that the pool's status is consistent with the 
+ * param they have set, some threads may have to be marked died. 
+ * and the threads who has been marked died will exit imediately 
  * after having done their current tasks. 
  *    @stpool_adjust will not return until there are none servering
  * threads marked died in the pool.
@@ -678,4 +695,170 @@ EXPORT int stpool_throttle_disabled_wait(HPOOL hp, long ms);
 */
 EXPORT int  stpool_wait(HPOOL hp, struct sttask_t *tsk, long ms);
 EXPORT int  stpool_waitex(HPOOL hp, int (*sttask_match)(struct stpool_tskstat_t *stat, void *arg), void *arg, long ms); 
+
+/* extensions :
+ *     The user can install a filter on the pool, tasks except rescheduling tasks will 
+ * be processed by the filter before their being delivered into the pool.
+ * 	   (see @stpool_event_xx for more details)
+ */
+enum {
+	EV_TRIGGLE_THREADS = 1,
+	EV_TRIGGLE_TASKS, 
+	EV_TRIGGLE_THREADS_OR_TASKS,
+	EV_TRIGGLE_THREADS_AND_TASKS,
+};
+
+enum {
+	/* The task should be discarded.
+	 *
+	 *     STPOOL_TASK_ERR_FILTER_DISCARD will be returned by @stpool_add_xx
+	 */
+	EV_FILTER_DISCARD = 1,
+
+	/* The pool is busy now, the pool itself will call @stpool_wait with @ev_param 
+	 * milliseconds. the task will be added into the pool automatically after
+	 * the @stpool_wait's returning.
+	 */
+	EV_FILTER_WAIT,
+
+	/* The pool is busy now, the user can call @stpool_event_wait
+	 * to wait on the pool.
+	 *
+	 *     STPOOL_TASK_ERR_FILTER_WAIT will be returned by @stpool_add_xx
+	 */
+	EV_FILTER_WAIT2,
+
+	/* The task is allowed to be delivered into the pool */
+	EV_FILTER_PASS,
+};
+
+#ifdef _WIN32
+typedef unsigned __int32 uint32_t;
+#else
+#include <stdint.h>
+#endif
+
+struct stbrf_stat_t {
+	/* The number of current pending task of the pool */
+	int ntasks_pendings;
+	
+	/* The number of running threads of the pool */
+	int nthreads_running;
+	
+	/* Is the pool busy now ? */
+	int evflt_busy;
+};
+
+struct stevflt_res_t {
+	/* The policy to process the task. (EV_FILTER_XX) */
+	uint32_t ev_flttyp:6;
+	
+	/* extra result reseved for @ev_filter */
+	uint32_t ev_param:26;
+};
+
+struct stevent_t {
+	/* The triggle number of running threads.
+	 *
+	 *     if the number of current running threads of the pool is less
+	 * than @ev_threads_num, @stpool_event_wait will be woke up.	
+	 */ 
+	int ev_threads_num;
+	
+	/* The triggle pending number of tasks 
+	 *
+	 *     if the number of current pending tasks of the pool is less
+	 * than @ev_tasks_num, the @stpool_event_wait will be woke up.
+	 */
+	int ev_tasks_num;
+	
+	/* The filter type 
+	 *	  EV_TRIGGLE_THREADS              @ev_threads_num will effect
+	 *    EV_TRIGGLE_TASKS                @ev_tasks_num will effect
+	 *    EV_TRIGGLE_THREADS_OR_TASKS     both @ev_threads_num and @ev_tasks_num 
+	 *                                    will effect. it means that one of the 
+	 *                                    situations below happen, @stpool_wait will
+	 *                                    be woke up.
+	 *                                    	1) @pool->nthreads_running < @ev_threads_num
+	 *                                    	2) @pool->ntasks_pending < @ev_tasks_num
+	 *
+	 *    EV_TRIGGLE_THREADS_AND_TASKS    both @ev_threads_num and @ev_tasks_num will 
+	 *                                    effect. it means that @stpool_wait will not 
+	 *                                    be woke up until all of the situations above
+	 *                                    happend.
+	 */
+	long ev_triggle_type;
+	
+	
+	/* The filter callback. 
+	 * Arguments that are passed to the callback.
+	 *    @hp    the pool handle.
+	 *    @ev    the current event param.
+	 *    @brfst the brief status of the pool
+	 *    @task  the delivering task.
+	 *
+	 * Return:
+	 *    The policy to process the task.
+	 */
+	struct stevflt_res_t (*ev_filter)(HPOOL hp, struct stevent_t *ev, struct stbrf_stat_t *brfst, struct sttask_t *task);
+	
+	/* The filter argument */
+	void *ev_arg;
+};
+
+/* @stpool_event_get
+ *		Get the current setting of the filter.
+ *    
+ * Arguments:
+ *    @hp     [in]  the pool handle 
+ *
+ *    @ev     [in]  the filter param
+ *                    
+ * Return:
+ * 	  The effecitive setting
+*/
+
+EXPORT struct stevent_t *stpool_event_get(HPOOL hp, struct stevent_t *ev);
+
+/* @stpool_event_set
+ *		Install the filter. tasks will be processed by the filter before
+ * their delivering into the pool.
+ *    
+ * Arguments:
+ *    @hp     [in]  the pool handle 
+ *
+ *    @ev     [in]  the filter param
+ *                    
+ * Return:
+ * 	  None
+*/
+EXPORT void stpool_event_set(HPOOL hp, struct stevent_t *ev);
+
+/* @stpool_event_wait
+ *		Wait on the filter in @ms milliseconds. If the pool is busy now, the
+ * filter will prevent the task from being added into the pool imediately.
+ * @stpool_event_wait will return if the pool is ready or it is woke up by
+ * @stpool_event_pulse.
+ *
+ * Arguments:
+ *    @hp     [in]  the pool handle 
+ *
+ *    @ms     [in]  -1 == INFINITE                   
+ *                    
+ * Return:
+ *		On success, it returns 0.  On timeout, 1 is returned, 
+ */
+
+EXPORT int  stpool_event_wait(HPOOL hp, long ms);
+
+/* @stpool_event_pulse
+ *		Wakeup the @stpool_event_wait	
+ * 
+ * Arguments:
+ *    @hp     [in]  the pool handle 
+ *                    
+ * Return:
+ *	  None
+ */
+EXPORT void stpool_event_pulse(HPOOL hp);
 #endif

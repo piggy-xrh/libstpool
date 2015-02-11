@@ -13,7 +13,7 @@
 
 const char *
 stpool_version() {
-    return "2015/01/21-1.2-libstpool";
+	return "2015/02/09-2.3-libstpool-filter";
 }
 
 static void
@@ -54,6 +54,13 @@ long
 stpool_release(HPOOL hp) {		
 	return tpool_release((struct tpool_t *)hp, 0);	
 }
+
+/* We do not export the interface at present. */
+void 
+stpool_load_env(HPOOL hp) {
+	tpool_load_env((struct tpool_t *)hp);	
+}
+
 
 void 
 stpool_set_activetimeo(HPOOL hp, long acttimeo) {
@@ -213,3 +220,24 @@ stpool_waitex(HPOOL hp, int (*sttask_match)(struct stpool_tskstat_t *, void *), 
 					  arg,
 					  ms);
 }
+
+struct stevent_t *
+stpool_event_get(HPOOL hp, struct stevent_t *ev) {
+	return (struct stevent_t *)tpool_event_get((struct tpool_t *)hp, 
+											   (struct event_t *)ev);
+}
+
+void 
+stpool_event_set(HPOOL hp, struct stevent_t *ev) {
+	tpool_event_set((struct tpool_t *)hp, 
+					(struct event_t *)ev);
+}
+
+int stpool_event_wait(HPOOL hp, long ms) {
+	return tpool_event_wait((struct tpool_t *)hp, ms);
+}
+
+void stpool_event_pulse(HPOOL hp) {
+	tpool_event_pulse((struct tpool_t *)hp);
+}
+
