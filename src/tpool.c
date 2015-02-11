@@ -1227,9 +1227,8 @@ tpool_rmq_dispatch(struct tpool_t *pool, XLIST *rmq, XLIST *no_callback_q, int c
 	if (no_callback_q && !XLIST_EMPTY(no_callback_q)) {
 		OSPX_pthread_mutex_lock(&pool->mut);	
 		tpool_task_complete_nocallback_l(pool, no_callback_q);
-		OSPX_pthread_mutex_unlock(&pool->mut);	
-#ifndef _CLEAN_RUBBISH_INBACKGROUND
-		tpool_delete_tasks(pool, no_callback_q);
+#ifdef _CLEAN_RUBBISH_INBACKGROUND
+		CLEAN_2(pool, no_callback_q);
 #endif
 		OSPX_pthread_mutex_unlock(&pool->mut);	
 #ifndef _CLEAN_RUBBISH_INBACKGROUND
