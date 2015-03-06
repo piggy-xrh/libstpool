@@ -458,10 +458,6 @@
        返回非0值，表示用户希望该任务继续被执行,返回2则表示使用@pri指定的优先级执行
            
 
-    4. 提示
-          在@tskstat_walk(见@stpool_mark_task)和sttask_match(见@stpool_waitex)中只允许调用@stpool_version/@stpool_extract,
-      因为在回调前pool已经上了锁. 其它API访问pool会导致获取不到锁.
-
  附录2:
      (Email: piggy_xrh@163.com   QQ: 1169732280)
 
