@@ -1578,6 +1578,7 @@ tpool_add_task_ex(struct tpool_t *pool, struct task_ex_t *tskex, int pri, int pr
 		tskex->pri = 0;
 		tskex->pri_q = 0;
 		tskex->pri_policy = pri_policy;
+	
 	} else {
 		assert(!tskex->f_push);
 		tskex->f_pri = 1;
@@ -2362,9 +2363,9 @@ tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {
 			
 			/* NOTE:
 			 * 		We do not care about which thread will be woke up, we just 
-			 * wake up less than 2 threads to provide services. so the thread
-			 * should check the pool status again if the thread is going to 
-			 * exit after its having been woke up.
+			 * wake up no more than 3 threads to provide services. so the threads
+			 * should check the pool status again if they are going to exit after 
+			 * its having been woke up.
 			 */
 			if (pool->nthreads_waiters  > nwake) {
 				pool->nthreads_waiters -= nwake;
@@ -2624,8 +2625,8 @@ tpool_thread_status_change(struct tpool_t *pool, struct tpool_thread_t *self, lo
 		self->run = 0;		
 		
 		/* WAIT-->FREE (woke up)-->QUIT */
-		/* We look up the task status before the thread's exiting since
-		 * we do not know that which thread will be woke up.
+		/* We look up the task status before the thread's exiting since we do 
+		 * not know that which thread will be woke up by @tpool_increase_thread
 		 */
 		if (!XLIST_EMPTY(&pool->dispatch_q) || (!pool->paused && pool->npendings))
 			tpool_increase_threads(pool, self);
