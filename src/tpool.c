@@ -1512,8 +1512,12 @@ tpool_add_task_ex(struct tpool_t *pool, struct task_ex_t *tskex, int pri, int pr
 				
 				if (2 == tpool_ev_wait_l(pool, ms, 1))
 					++ restart;
+				else 
+					restart = 0;
+				break;
 			} 
 			case EV_FLT_PASS:
+				restart = 0;
 				break;
 			case EV_FLT_WAIT2:
 				tsk_code = POOL_TASK_ERR_FILTER_WAIT;
@@ -1523,7 +1527,7 @@ tpool_add_task_ex(struct tpool_t *pool, struct task_ex_t *tskex, int pri, int pr
 				tsk_code = POOL_TASK_ERR_FILTER_DISCARD;
 				break;
 			}
-
+			
 			if (tsk_code)
 				return tsk_code;
 
@@ -1644,7 +1648,7 @@ tpool_add_task_ex(struct tpool_t *pool, struct task_ex_t *tskex, int pri, int pr
 	if (!pool->paused) {
 		if (pool->npendings == XLIST_SIZE(&pool->dispatch_q) - 1) 
 			pool->ncont_completions = 0;
-	
+		
 		if (pool->maxthreads > REAL(pool) 
 			/* FIX BUGS. (2015-2-09) 
 		 	 *    The pool should be woke up if all servering threads are
