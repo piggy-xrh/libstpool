@@ -1644,7 +1644,7 @@ tpool_add_task_ex(struct tpool_t *pool, struct task_ex_t *tskex, int pri, int pr
 	if (!pool->paused) {
 		if (pool->npendings == XLIST_SIZE(&pool->dispatch_q) - 1) 
 			pool->ncont_completions = 0;
-		
+	
 		if (pool->maxthreads > REAL(pool) 
 			/* FIX BUGS. (2015-2-09) 
 		 	 *    The pool should be woke up if all servering threads are
@@ -2322,13 +2322,13 @@ tpool_add_threads(struct tpool_t *pool, int nthreads, long lflags /* reserved */
 static void 
 tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {	
 	int ntasks_pending = pool->paused ? XLIST_SIZE(&pool->dispatch_q) : pool->npendings;
-
+	
 	/* Check the pool status */
 	if (!ntasks_pending) {
 		pool->launcher = 0;
 		return;
 	} 
-	
+		
 	/* We forbidden the same thread creating working threads continuously */
 	if (pool->launcher) {
 		if ((self && self->thread_id == pool->launcher) ||
@@ -2351,7 +2351,7 @@ tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {
 
 			/* We should decrease the number of threads that has been woke up by us */
 			+ XLIST_SIZE(&pool->ths_waitq) - pool->nthreads_waiters);
-
+		
 		if (ntasks_pending > 0 && pool->nthreads_waiters == XLIST_SIZE(&pool->ths_waitq)) {
 			struct xlink *link;	
 			int nwake = min(ntasks_pending, 3);
@@ -2362,19 +2362,15 @@ tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {
 			 * should check the pool status again if the thread is going to 
 			 * exit after its having been woke up.
 			 */
-			XLIST_FOREACH(&pool->ths_waitq, &link) {
-				if (POOL_RUNQ_thread(link)->status & THREAD_STAT_WOKEUP)
-					continue;
-
-				/* We just simply mark a thread with THREAD_STAT_WOKEUP, but
-				 * it does not mean that the marked thread  will be woke up,
-				 * it depends on the OS.
-				 */
-				POOL_RUNQ_thread(link)->status |= THREAD_STAT_WOKEUP;
-				OSPX_pthread_cond_signal(&pool->cond);	
-				-- pool->nthreads_waiters;
-				if (!-- nwake) 
-					break;
+			if (pool->nthreads_waiters  > nwake) {
+				pool->nthreads_waiters -= nwake;
+				
+				/* We just simply give threads a notification */
+				for (;nwake > 0; --nwake)
+					OSPX_pthread_cond_signal(&pool->cond);
+			} else {
+				pool->nthreads_waiters = 0;
+				OSPX_pthread_cond_broadcast(&pool->cond);
 			}
 			pool->launcher = self ? self->thread_id : OSPX_pthread_id();
 		} 
@@ -2725,10 +2721,7 @@ tpool_thread_status_change(struct tpool_t *pool, struct tpool_thread_t *self, lo
 		
 		/* Remove the thread from the wait queue */
 		XLIST_REMOVE(&pool->ths_waitq, &self->run_link);	
-		if (!(THREAD_STAT_WOKEUP & self->status)) 
-			-- pool->nthreads_waiters;
-		else
-			self->status &= ~THREAD_STAT_WOKEUP;
+		
 		assert(pool->nthreads_waiters >= 0 && 
 			pool->nthreads_waiters <= XLIST_SIZE(&pool->ths_waitq));
 	}	

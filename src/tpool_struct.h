@@ -61,8 +61,7 @@ enum {
 	THREAD_STAT_FORCE_QUIT,  /*Pool is being destroyed*/
 	THREAD_STAT_LEAVE,       /*Leaving*/
 	THREAD_STAT_RM     = (uint16_t)0x4000, /* Thread is in the RM queue */
-	THREAD_STAT_WOKEUP = (uint16_t)0x8000,
-	THREAD_STAT_INNER  = THREAD_STAT_RM|THREAD_STAT_WOKEUP,
+	THREAD_STAT_INNER  = THREAD_STAT_RM
 };
 
 struct tpool_thread_t {
