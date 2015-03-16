@@ -14,15 +14,21 @@
 #endif
 #include "ospx_type.h"
 
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-EXPORT int  OSPX_load();
-EXPORT void OSPX_unload();
-/* i <1~x>
+/* If you want to operate the error APIs which is defined
+ * in the ospx_error.h in the thread,  you should call
+ * OSPX_library_init with LB_F_ERRLIB flag before your calling
+ * any error APIs. 
  */
+#define LB_F_ERRLIB       0x1
+
+EXPORT int  OSPX_library_init(long lflags);
+EXPORT void OSPX_library_end();
+
+/* i <1~x> */
 #define OSPX_bitset(address, i) (((uint8_t *)address)[(i + 7)/8 -1] |= ((uint8_t)1 << (i-1)%8))
 #define OSPX_bitget(address, i) (((uint8_t *)address)[(i + 7)/8 -1] & ((uint8_t)1 << (i-1)%8))
 #define OSPX_bitclr(address, i) (((uint8_t *)address)[(i + 7)/8 -1] &= ~((uint8_t)1 << (i-1)%8))

@@ -4,9 +4,9 @@
 #include "ospx_errno.h"
 #include "ospx_error.h"
 
-/* NOTE: ospx_key is definited in ospx.c
+/* NOTE: g_ospx_key is definited in ospx.c
  */
-extern OSPX_pthread_key_t ospx_key;
+extern OSPX_pthread_key_t g_ospx_key;
 
 typedef struct OSPX_em_t {
 	struct OSPX_em_t *next;
@@ -104,20 +104,18 @@ int OSPX_error_register(uint8_t *m, const char *desc, OSPX_ansi_error efunc) {
 		slinitializied = 1;
 	}
 	
-	ectx = (OSPX_em_t *)malloc(sizeof(OSPX_em_t) + (desc ? (strlen(desc) + 1) : 0));
+	ectx = (OSPX_em_t *)calloc(1, sizeof(OSPX_em_t) + (desc ? (strlen(desc) + 1) : 0));
 	if (!ectx) {
 		errno = ENOMEM;
 		return -1;
-	}
-	
-	RWLOCK_WRITER_ACQUIRE(&ospx_ectx);
-	memset(ectx, 0, sizeof(*ectx));
+	}	
 	ectx->desc = (char *)(ectx + 1);
 	ectx->m    = *m;
 	ectx->efunc = efunc;
 	if (desc)
 		strcpy(ectx->desc, desc); 
 	
+	RWLOCK_WRITER_ACQUIRE(&ospx_ectx);
 	if (!OSPX_m_isfree(ectx->m)) 
 		OSPX_m_new(ectx->m);
 
@@ -160,7 +158,7 @@ EXPORT
 void OSPX_setlasterror(OSPX_error_t error) {
 	OSPX_tls_t *tls;
 	
-	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(ospx_key);
+	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(g_ospx_key);
 	
 	/* If the thread is not created by our library, 
 	 * and @OSPX_load has not been called by user,
@@ -180,7 +178,7 @@ EXPORT
 OSPX_error_t OSPX_getlasterror() {
 	OSPX_tls_t *tls;
 	
-	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(ospx_key);	
+	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(g_ospx_key);	
 	if (!tls)
 		return OSPX_MAKERROR(OSPX_M_SYS, 0);	
 	
@@ -280,6 +278,7 @@ errprefix_dump(char *errprefix, uint16_t *bufflen, const char *append) {
 		strcat(errprefix, "/");
 		left = *bufflen - strlen(errprefix) - 1;
 	}
+	
 	if (strlen(append) > left) {
 		size_t blklen = *bufflen + strlen(append) - left + 50;
 		char *newblk  = realloc(errprefix, blklen); 
@@ -301,7 +300,7 @@ EXPORT
 void OSPX_errprefix_append(const char *fmt, ...) {
 	OSPX_tls_t *tls;
 	
-	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(ospx_key);
+	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(g_ospx_key);
 	if (tls && fmt) {
 		char errprefix[500];
 		va_list ap;
@@ -317,7 +316,7 @@ EXPORT
 const char *OSPX_errprefix() {
 	OSPX_tls_t *tls;
 	
-	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(ospx_key);
+	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(g_ospx_key);
 	
 	return tls ? tls->errprefix : NULL;
 }
@@ -326,7 +325,7 @@ EXPORT
 void OSPX_errprefix_clr() {
 	OSPX_tls_t *tls;
 	
-	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(ospx_key);
+	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(g_ospx_key);
 	if (tls && tls->errprefix) {
 		free(tls->errprefix);
 		tls->errprefix = 0;
@@ -338,7 +337,7 @@ EXPORT
 void OSPX_setlasterror_ex(OSPX_error_t error, const char *fmt, ...) {
 	OSPX_tls_t *tls;
 	
-	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(ospx_key);
+	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(g_ospx_key);
 	if (tls) {
 		tls->error = error;	
 		if (fmt) {

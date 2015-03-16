@@ -8,7 +8,7 @@ AR    :=$(CROSS)ar
 STRIP :=$(CROSS)strip
 
 TARGET  :=libstpool.a libstpool.so  demo demo_pri demo_sche demo_filter
-OBJS_tpool :=stpool.o tpool.o ospx.o  
+OBJS_tpool :=stpool.o tpool.o ospx.o  ospx_error.o
 OBJS_DIR :=.obj
 VPATH =.:src
 
@@ -27,8 +27,6 @@ endif
 ifneq (y, $(DISABLE_CLEAN_RUBBISH_INBACKGROUND))
 CFLAGS += -D_CLEAN_RUBBISH_INBACKGROUND
 endif
-
-#CFLAGS +=-D_OPTIMIZE_PTHREAD_CREATE
 
 all:PREPARE $(TARGET)
 

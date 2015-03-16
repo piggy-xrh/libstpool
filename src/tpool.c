@@ -1655,7 +1655,7 @@ tpool_add_task_ex(struct tpool_t *pool, struct task_ex_t *tskex, int pri, int pr
 		 	 *    The pool should be woke up if all servering threads are
 		 	 * sleeping.
 		     */
-			|| (pool->nthreads_waiters && pool->nthreads_waiters == XLIST_SIZE(&pool->ths_waitq))
+			|| (pool->nthreads_waiters && pool->nthreads_waiters >= XLIST_SIZE(&pool->ths_waitq))
 			)
 			tpool_increase_threads(pool, NULL);	
 	}
@@ -2357,7 +2357,7 @@ tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {
 			/* We should decrease the number of threads that has been woke up by us */
 			+ XLIST_SIZE(&pool->ths_waitq) - pool->nthreads_waiters);
 		
-		if (ntasks_pending > 0 && pool->nthreads_waiters == XLIST_SIZE(&pool->ths_waitq)) {
+		if (ntasks_pending > 0 && pool->nthreads_waiters >= XLIST_SIZE(&pool->ths_waitq)) {
 			struct xlink *link;	
 			int nwake = min(ntasks_pending, 3);
 			
@@ -2727,8 +2727,11 @@ tpool_thread_status_change(struct tpool_t *pool, struct tpool_thread_t *self, lo
 		/* Remove the thread from the wait queue */
 		XLIST_REMOVE(&pool->ths_waitq, &self->run_link);	
 		
-		assert(pool->nthreads_waiters >= 0 && 
-			pool->nthreads_waiters <= XLIST_SIZE(&pool->ths_waitq));
+		/* 1. @OSPX_pthread_cond_signal may wake up more than one sleeping threads 
+		 * 2. Thread is changing status from WAIT to WAIT_TIMEDOUT.
+		 */
+		if (pool->nthreads_waiters > XLIST_SIZE(&pool->ths_waitq))
+			-- pool->nthreads_waiters;
 	}	
 	self->status = status | (self->status & THREAD_STAT_INNER);
 	

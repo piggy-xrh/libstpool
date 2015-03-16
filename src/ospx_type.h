@@ -59,7 +59,6 @@ typedef struct {
 	int  rw_nwaitreaders, rw_nwaitwriters;
 } OSPX_pthread_rwlock_t;
 
-#ifdef _USE_OSPX_ERR_HANDLE
 typedef struct {
 	HANDLE   h;
 	uint64_t error;	
@@ -68,7 +67,6 @@ typedef struct {
 	uint16_t f_ltls:1;
 	uint16_t f_resv:15;
 } OSPX_tls_t;
-#endif
 
 typedef DWORD  OSPX_pthread_key_t;
 typedef HANDLE OSPX_pthread_t;
@@ -84,7 +82,6 @@ typedef CRITICAL_SECTION OSPX_pthread_mutex_t;
 #include <sys/stat.h>        
 #include <fcntl.h>
 
-#ifdef _USE_OSPX_ERR_HANDLE
 typedef struct {
 	uint64_t error;
 	char *errprefix;
@@ -92,7 +89,6 @@ typedef struct {
 	uint16_t f_ltls:1;
 	uint16_t f_resv:15;
 } OSPX_tls_t;
-#endif
 
 typedef pthread_key_t OSPX_pthread_key_t;
 typedef pthread_t OSPX_pthread_t;
@@ -100,7 +96,6 @@ typedef pthread_mutex_t OSPX_pthread_mutex_t;
 typedef pthread_cond_t  OSPX_pthread_cond_t;
 typedef pthread_rwlock_t OSPX_pthread_rwlock_t;
 typedef sem_t OSPX_sem_t;
-
 
 #endif
 

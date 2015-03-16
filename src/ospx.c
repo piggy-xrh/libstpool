@@ -6,61 +6,63 @@
 #include "ospx.h"
 #include "ospx_error.h"
 
-OSPX_pthread_key_t ospx_key  = 0;
-uint64_t g_owner_id = 0;
+OSPX_pthread_key_t g_ospx_key  = 0;
+uint32_t g_installer = 0;
 
 /**************************************OSPX**************************/
 EXPORT
-int OSPX_load() {
-	int owner = 0; 
+int OSPX_library_init(long lflags) {
+	int installer = 0;
 
-#if defined(_WIN32) || defined(_USE_OSPX_ERR_HANDLE)
 	/* Have we loaded the library ? */
-	if (!ospx_key) {
+	if (!g_ospx_key) {
 		/* The codes below should be executed only once. so
-		 * we'd better call OSPX_load in the main thread to
-		 * force the library being the owner.
+		 * we'd better call OSPX_library_init in the main thread. 
 		 */
-		if ((errno = OSPX_pthread_key_create(&ospx_key))) {
+		if ((errno = OSPX_pthread_key_create(&g_ospx_key))) {
 			fprintf(stderr, "@%s-OSPX_TLS_create: %s\n",
 				__FUNCTION__, strerror(errno));
 
 			return -1;
 		}
-		owner = 1;
+		installer = 1;
+		g_installer = OSPX_pthread_id();
 	}
+
+#ifdef _WIN32
+	lflags |= LB_F_ERRLIB;
 #endif
-	
-	/* @OSPX_load should be called in every threads who
-	 * is not created by our library, and the @OSPX_unload
+
+	/* @OSPX_library_init should be called in every threads 
+	 * who is not created by our library, and the @OSPX_unload
 	 * should be called if the threads are going to exit.
 	 */
-
-#ifdef _USE_OSPX_ERR_HANDLE	
-	/* Verify the TLS datas */
-	if (!OSPX_pthread_getspecific(ospx_key)) {
+	if (LB_F_ERRLIB & lflags) {
 		OSPX_tls_t *tls;
 		
-		tls = (OSPX_tls_t *)malloc(sizeof(OSPX_tls_t));
-		if (!tls) {
-			/* Are we responsible for freeing the TLS key ? */
-			if (owner) {
-				OSPX_pthread_key_delete(ospx_key);
-				ospx_key = 0;	
+		/* Verify the TLS datas */
+		if (!OSPX_pthread_getspecific(g_ospx_key)) {
+			if (!(tls = (OSPX_tls_t *)calloc(1, sizeof(OSPX_tls_t)))) {
+				/* Are we responsible for freeing the TLS key ? 
+				 * To make sure that the library works well, the
+				 * caller should call the @OSPX_library_init in 
+				 * the main routine of the APP.
+				 */
+		#ifdef _WIN32
+				if (g_installer == OSPX_pthread_id()) {
+					OSPX_pthread_key_delete(g_ospx_key);
+					g_ospx_key = 0;	
+				}
+		#endif
+				errno = ENOMEM;
+				return -1;
 			}
-			errno = ENOMEM;
-			return -1;
 		}
-		memset(tls, 0, sizeof(*tls));
-		tls->f_ltls = 0;
-		OSPX_pthread_setspecific(ospx_key, tls);
-		
-		/* Record the owner ID */
-		if (owner) 
-			g_owner_id = (uint64_t)(int)tls;
+		/* Attach the TLS datas */
+		OSPX_pthread_setspecific(g_ospx_key, tls);
 	}
-
-	if (owner) {
+		
+	if (installer) {
 		uint8_t em;
 		
 		/* Register the default error function */ 
@@ -72,35 +74,33 @@ int OSPX_load() {
 			/* We just ignore the error */
 		}	
 	}
-#endif
 	
 	return 0;
 }
 
 EXPORT 
-void OSPX_unload() {
-#ifdef _USE_OSPX_ERR_HANDLE
-	if (ospx_key) {
-		OSPX_tls_t *tls;
+void OSPX_library_end() {
+	OSPX_tls_t *tls;
+	
+	if (!g_ospx_key)
+		return;
 		
-		tls = (OSPX_tls_t *)OSPX_pthread_getspecific(ospx_key);
-		
-		/* Free the TLS datas */
-		if (tls) {
-			OSPX_setlasterror(OSPX_MAKERROR(OSPX_M_SYS, 0));
-			if (!tls->f_ltls)
-				free((void *)tls);
+	/* Free the TLS datas */
+	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(g_ospx_key);
+	if (tls) {
+		/* We call @OSPX_setlasterror to free the error prefix strings */
+		OSPX_setlasterror(OSPX_MAKERROR(OSPX_M_SYS, 0));
+		if (!tls->f_ltls)
+			free((void *)tls);
 
-			/* Check whether we are the owner */
-			if ((uint64_t)(int)tls == g_owner_id) {	
-				/* We do the clean job here. (We do nothing at present) */
-				g_owner_id = 0;
-			}
+		/* Check whether we are the owner */
+		if (g_installer == OSPX_pthread_id()) {	
+			/* We do the clean job here. */
+			OSPX_pthread_key_delete(g_ospx_key);
+			g_ospx_key = 0;
 		}
 	}
-#endif
 }
-
 /**************************************OSPX_tls**********************/
 
 /**************************************OSPX_com**********************/
@@ -154,54 +154,45 @@ typedef struct {
 #ifdef _WIN32
 unsigned  __stdcall 
 OSPX_thread_entry(void *arglst) {
-	int code;
+	OSPX_tls_t ltls = {0};
 	OSPX_param_t *p  = (OSPX_param_t *)arglst;
+	int (*thread_routine)(void *) = p->routine;
+	void *arg = p->arglst;
 	
-	if (ospx_key) {
-#ifdef _USE_OSPX_ERR_HANDLE	
-		OSPX_tls_t   tls = {p->h, 0, NULL, 0, 1, 0};
-		OSPX_pthread_setspecific(ospx_key, &tls);
-#else
-		OSPX_pthread_setspecific(ospx_key, (void *)p->h);
-#endif
-	}
-	code = p->routine(p->arglst);
-	
-	if (ospx_key) {
-#ifdef _USE_OSPX_ERR_HANDLE
-		/* We call setlasterror to clear the resource */
-		OSPX_setlasterror(0);
-#endif
-	}
-	
+	/* Record the handle */
+	ltls->h = p->h;
 	free(p);
-	return code;
+	
+	/* Attach the TLS datas */
+	if (g_ospx_key) {
+		ltls.f_ltls = 1;
+		OSPX_pthread_setspecific(g_ospx_key, &ltls);
+	}
+
+	return (*thread_routine)(arg);		
 }
 #else
 void *
 OSPX_thread_entry(void *arglst) {
-	int code;
+	OSPX_tls_t ltls = {0};
 	OSPX_param_t *p  = (OSPX_param_t *)arglst;
+	int (*thread_routine)(void *) = p->routine;
+	void *arg = p->arglst;
 	
-#ifdef _USE_OSPX_ERR_HANDLE	
-	if (ospx_key) {
-		OSPX_tls_t   tls = {0, NULL, 0, 1, 0};
-		OSPX_pthread_setspecific(ospx_key, &tls);
-	}
-#endif
-	code = p->routine(p->arglst);
-	
-	/* We call setlasterror to clear the resource */
-#ifdef _USE_OSPX_ERR_HANDLE
-	if (ospx_key) {
-		OSPX_setlasterror(0);
-		OSPX_pthread_setspecific(ospx_key, NULL);
-	}
-#endif	
 	free(p);
-	pthread_exit((void *)code);
+	
+	/* Attach the TLS datas */
+	if (g_ospx_key) {
+		ltls.f_ltls = 1;
+		OSPX_pthread_setspecific(g_ospx_key, &ltls);
+	}
+
+	pthread_exit(
+			(void *)(*thread_routine)(arg)
+		);
 }
 #endif
+
 EXPORT
 int OSPX_pthread_create(OSPX_pthread_t *handle, int joinable, int (*routine)(void *), void * arg) {
 	OSPX_param_t *p;
@@ -210,7 +201,6 @@ int OSPX_pthread_create(OSPX_pthread_t *handle, int joinable, int (*routine)(voi
 		return ENOMEM;
 	
 	errno = 0;
-	memset(handle, 0, sizeof(OSPX_pthread_t));
 	p->routine = routine;	
 	p->arglst  = arg;
 #ifdef _WIN32
@@ -220,7 +210,7 @@ int OSPX_pthread_create(OSPX_pthread_t *handle, int joinable, int (*routine)(voi
 		/* In order to get the thread handle before the thread's running,
 		 * we suspend the thread and then resume it
 		 */
-		h = (HANDLE)_beginthreadex(NULL, 0, OSPX_thread_entry, p, CREATE_SUSPENDED, NULL);
+		h = (HANDLE)_beginthreadex(NULL, 1024 * 1024 * 2, OSPX_thread_entry, p, CREATE_SUSPENDED, NULL);
 		if (errno) 
 			free(p);
 		else {
@@ -239,11 +229,13 @@ int OSPX_pthread_create(OSPX_pthread_t *handle, int joinable, int (*routine)(voi
 		int error;
 
 		pthread_attr_t *pattr = NULL, attr;
-		if (!joinable) {
+		if (!pthread_attr_init(&attr)) {
 			pattr = &attr;
-			pthread_attr_init(pattr);
-			pthread_attr_setscope(pattr, PTHREAD_SCOPE_SYSTEM);
-			pthread_attr_setdetachstate(pattr, PTHREAD_CREATE_DETACHED);	
+			pthread_attr_setstacksize(pattr, 1024 * 1024 * 2);
+			if (!joinable) {
+				pthread_attr_setscope(pattr, PTHREAD_SCOPE_SYSTEM);
+				pthread_attr_setdetachstate(pattr, PTHREAD_CREATE_DETACHED);	
+			}
 		}
 		error = pthread_create(handle, pattr, OSPX_thread_entry, p);	
 		if (error)
@@ -288,20 +280,16 @@ int OSPX_pthread_detach(OSPX_pthread_t handle) {
 EXPORT
 OSPX_pthread_t OSPX_pthread_self() {
 #ifdef _WIN32
-#ifdef _USE_OSPX_ERR_HANDLE
 	OSPX_tls_t *tls;	
 	/* We should not call GetCurrentThread(Id)() to
 	 * get the thread handle (If we do this, Calling 
 	 * OSPX_pthread_detach( OSPX_pthread_self()) will
 	 * have no effect)
 	 */
-	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(ospx_key);
+	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(g_ospx_key);
 	if (!tls)
 		return 0;
 	return tls->h;
-#else
-	return (OSPX_pthread_t)OSPX_pthread_getspecific(ospx_key);
-#endif
 #else
 	return pthread_self();
 #endif
