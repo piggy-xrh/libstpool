@@ -386,6 +386,7 @@ mpool_stat(struct mpool_t *mp, struct mpool_stat_t *stat) {
 	stat->objs_size = mp->objlen;
 	stat->nobjs_resved = 0;
 	stat->nobjs_allocated = 0;
+	stat->nblks = 0;
 
 	ACQUIRE_LOCK(mp);
 	for (;index<initd->mbnum; index++) {
@@ -395,10 +396,10 @@ mpool_stat(struct mpool_t *mp, struct mpool_stat_t *stat) {
 			stat->nobjs_resved += blk->left;
 			stat->nobjs_allocated  += blk->num - blk->left;
 			stat->mem_hold_all += blk->length;
+			++ stat->nblks;
 		}
 	}
 	stat->nobjs_acquired = initd->nacquires;
-	stat->nblks = XLIST_SIZE(&initd->mq);
 	RELEASE_LOCK(mp);
 	
 	return stat;

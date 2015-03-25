@@ -271,7 +271,6 @@ tpool_create(struct tpool_t  *pool, int q_pri, int maxthreads, int minthreads, i
 	/* Connrect the param */
 	if (maxthreads < minthreads)
 		minthreads = maxthreads;
-	memset(pool, 0, sizeof(*pool)); 
 	
 	if (maxthreads <=0)
 		maxthreads = 1;
@@ -2236,11 +2235,9 @@ tpool_add_threads(struct tpool_t *pool, int nthreads, long lflags /* reserved */
 			++ pool->nthreads_real_pool;
 			
 			/* Give a notification to @tpool_adjust_wait */
-			if (!-- pool->nthreads_dying) {
-				pool->nthreads_waiters = 0 ;
+			if (!-- pool->nthreads_dying) 
 				OSPX_pthread_cond_broadcast(&pool->cond_ths);
-			}
-			
+					
 			-- nthreads;
 			if (!pool->nthreads_dying || !nthreads)
 				break;
@@ -2250,8 +2247,10 @@ tpool_add_threads(struct tpool_t *pool, int nthreads, long lflags /* reserved */
 		 * wait for being scheduled.
 		 */
 		if (pool->nthreads_real_sleeping && 
-			((!pool->paused && pool->npendings) || !XLIST_EMPTY(&pool->dispatch_q)))
+			((!pool->paused && pool->npendings) || !XLIST_EMPTY(&pool->dispatch_q))) {
 			OSPX_pthread_cond_broadcast(&pool->cond);
+			pool->nthreads_waiters = 0 ;
+		}
 	}
 	
 	/* Actually, In order to reduce the time to hold the global lock,

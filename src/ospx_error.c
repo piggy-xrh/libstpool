@@ -161,8 +161,8 @@ void OSPX_setlasterror(OSPX_error_t error) {
 	tls = (OSPX_tls_t *)OSPX_pthread_getspecific(g_ospx_key);
 	
 	/* If the thread is not created by our library, 
-	 * and @OSPX_load has not been called by user,
-	 * we just ignore it .
+	 * and @OSPX_library_init has not been called by 
+	 * user, we just ignore it .
 	 */	
 	if (tls) {
 		tls->error = error;	

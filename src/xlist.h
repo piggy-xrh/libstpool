@@ -71,7 +71,7 @@ extern "C" {
 #define XLIST_FOREACH_EX(lst, link, pplink) \
 	for ((*pplink)=(link); *(pplink); *(pplink)=((link) == (*(pplink))->next ? NULL : (*(pplink))->next))
 
-#define XLIST_ROFREACH_EX(lst, link, pplink) \
+#define XLIST_RFOREACH_EX(lst, link, pplink) \
 	for ((*pplink)=(link); *(pplink); *(pplink)=((link) == (*(pplink))->pre ? NULL : (*(pplink))->pre))
 
 #define XLIST_FOREACH(lst, pplink)  XLIST_FOREACH_EX(lst, XLIST_FRONT(lst), pplink)

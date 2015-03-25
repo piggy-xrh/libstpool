@@ -78,7 +78,6 @@ int main()
 	/* Release the pool */
 	printf("Shut down the pool now.\n");
 	stpool_release(hp);
-	getchar();
 		
 	return 0;
 }

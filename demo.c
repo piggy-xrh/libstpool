@@ -135,7 +135,7 @@ int main()
 	/************************************************************/
 	printf("\nPress any key to test the @tpool_adjust(abs) ....\n");
 	getchar();
-	stpool_adjust_abs(hp, 400, 400);
+	stpool_adjust_abs(hp, 300, 1);
 	printf("@tpool_adjust_abs(pool, 300, 1)\n%s\n", stpool_status_print(hp, NULL, 0));
 	
 	/* We call @stpool_adjust to recover the pool env */

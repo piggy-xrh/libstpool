@@ -13,7 +13,7 @@
 
 const char *
 stpool_version() {
-	return "2015/02/09-2.3-libstpool-filter";
+	return "2015/03/25-2.4-libstpool-filter";
 }
 
 static void

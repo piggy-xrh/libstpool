@@ -12,9 +12,11 @@ OBJS_tpool :=stpool.o tpool.o ospx.o  ospx_error.o
 OBJS_DIR :=.obj
 VPATH =.:src
 
+#Thanks for @pengjiasi: 
+#       The GCC option -fPIC should be set at the compiling step.
 
-CFLAGS  =-Isrc -s -O2 -DNDEBUG 
-#CFLAGS  =-Isrc -g 
+#CFLAGS  =-Isrc -s -O2 -DNDEBUG -fPIC
+CFLAGS  =-Isrc -g -fPIC
 
 ARFLAGS = -rv
 STRIPFLAGS = -xXg
@@ -41,7 +43,7 @@ libstpool.a:$(addprefix $(OBJS_DIR)/, $(OBJS_tpool))
 	chmod +x $@
 
 libstpool.so:$(addprefix $(OBJS_DIR)/, $(OBJS_tpool)) 
-	$(CC) -fPic --shared -o$@ $^
+	$(CC) --shared -o$@ $^
 	$(STRIP) $(STRIPFLAGS) $@
 
 demo:demo.o libstpool.a 
@@ -55,8 +57,6 @@ demo_sche:demo_sche.o libstpool.a
 
 demo_filter:demo_filter.o libstpool.a 
 	$(CC) $(CFLAGS) -o$@ $^ -lpthread -lrt
-
-
 
 
 $(OBJS_DIR)/%.o:%.c

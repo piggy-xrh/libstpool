@@ -41,7 +41,7 @@ typedef uint64_t OSPX_error_t;
 
 typedef const char *(*OSPX_ansi_error)(uint32_t code);
 /* NOTE:
- * 	 The OSPX_M_SYS error module has been registered in the OSPX_load like that below.
+ * 	 The OSPX_M_SYS error module has been registered in the OSPX_library_init like that below.
  *
  * 	 uint8_t sysm = OSPX_M_SYS;
  * 	 OSPX_error_register(&sysm, "Sys", OSPX_sys_strerror);

@@ -34,7 +34,7 @@ int OSPX_library_init(long lflags) {
 #endif
 
 	/* @OSPX_library_init should be called in every threads 
-	 * who is not created by our library, and the @OSPX_unload
+	 * who is not created by our library, and the @OSPX_library_end
 	 * should be called if the threads are going to exit.
 	 */
 	if (LB_F_ERRLIB & lflags) {
@@ -429,11 +429,8 @@ int OSPX_pthread_cond_timedwait(OSPX_pthread_cond_t *cond, OSPX_pthread_mutex_t 
 	return error;
 #else
 	if (timeout && 0 <= *timeout) {
-		int error;
 		struct timespec abstime = {0};
-		struct timeval tv0, tv1;
 		
-		OSPX_gettimeofday(&tv0, NULL);
 		clock_gettime(CLOCK_REALTIME, &abstime);
 		abstime.tv_nsec += (*timeout % 1000) *1000000;
 		abstime.tv_sec  += *timeout / 1000;
@@ -441,20 +438,8 @@ int OSPX_pthread_cond_timedwait(OSPX_pthread_cond_t *cond, OSPX_pthread_mutex_t 
 			abstime.tv_sec  += 1;
 			abstime.tv_nsec -= 1000000000;
 		}
-		error = pthread_cond_timedwait(cond, mut, &abstime);
-		OSPX_gettimeofday(&tv1, NULL);
-
-        if (tv1.tv_sec < tv0.tv_sec ||
-			(tv1.tv_sec == tv0.tv_sec && tv1.tv_usec < tv0.tv_usec))
-			*timeout = 0;
-		else {
-			uint64_t ull = (tv1.tv_sec - tv0.tv_sec) * 1000
-				+ (tv1.tv_usec - tv0.tv_usec) / 1000;
-			
-			*timeout = (ull >= *timeout) ? 0 : (*timeout - (long)ull);
-		}
-
-		return error;
+		
+		return pthread_cond_timedwait(cond, mut, &abstime);
 	}
 	
 	return pthread_cond_wait(cond, mut);
