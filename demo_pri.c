@@ -11,46 +11,61 @@
 #define msleep(x) usleep(x * 1000)
 #endif
 
-int  task_run(struct sttask_t *tsk)	{
-	printf("Run %s\n", tsk->task_name);
-
+int  task_run(struct sttask_t *ptsk)	{
+	printf("Run %s\n", ptsk->task_name);
+	
 	return 0;
 }
 
-int  task_complete(struct sttask_t *tsk, long vmflags, int task_code, struct stpriority_t *pri) {
-	printf("vmflags:%d task_code:%p\n", vmflags, task_code);
-	if (pri && pri->pri)
-		printf("pri:%d policy:%d\n", pri->pri, pri->pri_policy);
-		
+void task_complete(struct sttask_t *ptsk, long vmflags, int task_code) {
+	struct schattr_t attr;
+	
+	/* Acquire the scheduling attribute */
+	stpool_task_getschattr(ptsk, &attr);
+	
+	printf("vmflags:%ld task_code:%p [%s-%d]\n\n\n", 
+		vmflags, (void *)task_code, ptsk->task_name, attr.sche_pri);
+	
 	msleep(1000);
-
-	return 1;
+	
+	/* Reschedule the task if the task has been done successfully */
+	if (STTASK_VMARK_DONE & vmflags) 
+		stpool_add_task(ptsk->hp_last_attached, ptsk);	
 }
 
 int main()
 {
 	HPOOL hp;
-	struct sttask_t  ltask = {
-		"low_pri_task", task_run, task_complete, NULL
+	struct schattr_t attr[] = {
+		{0, 90, STPOLICY_PRI_SORT_INSERTBEFORE},
+		{0, 40, STPOLICY_PRI_SORT_INSERTAFTER},
+		{1, 10, STPOLICY_PRI_SORT_INSERTAFTER},
+		{0, 0,  STPOLICY_PRI_SORT_INSERTAFTER},
 	};
-	
+
 	/* Creat a pool with 1 servering threads */
-	hp = stpool_create(20, 20, 1, 10);
+	hp = stpool_create(1, 0, 1, 1);
 	printf("%s\n", stpool_status_print(hp, NULL, 0));
-	
+		
 	/* Add a task with zero priority */
-	stpool_add_task(hp, &ltask);
+	stpool_add_routine(hp, "hight_task", task_run, task_complete, NULL, &attr[0]);
+	stpool_add_routine(hp, "middle_task", task_run, task_complete, NULL, &attr[1]);
+	stpool_add_routine(hp, "low_task", task_run, task_complete, NULL, &attr[2]);
+	stpool_add_routine(hp, "zero_task", task_run, task_complete, NULL, &attr[3]);
 	
-	//stpool_remove_pending_task(hp, &ltask, 0);
 	/* Wake up the pool to run the tasks */
 	stpool_resume(hp);
 	
 	getchar();
-	/* Disable rescheduling tasks */
-	stpool_disable_rescheduling(hp, &ltask);
 	
+	/* Remove all tasks */
+	stpool_remove_pending_task(hp, NULL, 0);
+
+	/* Turn the throttle on */
+	stpool_throttle_enable(hp, 1);
+			
 	/* Wait for all tasks' completions */
-	stpool_wait(hp, NULL, -1);
+	stpool_task_wait(hp, NULL, -1);
 	
 	/* Release the pool */
 	stpool_release(hp);

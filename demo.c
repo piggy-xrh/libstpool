@@ -15,87 +15,67 @@
 
 static int g_test_reschedule = 0;
 
-int task_run(struct sttask_t *task) {
+int task_run(struct sttask_t *ptsk) {
 	/* TO DO */
-	printf("@task_run ...:%d\n", *(int *)task->task_arg);	
+	printf("@task_run ...:%d\n", *(int *)ptsk->task_arg);	
 
-	++ *(int *)task->task_arg;
-	msleep(20);
+	++ *(int *)ptsk->task_arg;
+	//msleep(3000);
 	
 	return 0;
 }
 
-int task_complete(struct sttask_t *task, long vmflags , int task_code, struct stpriority_t *pri) {	
-	int reschedule = 0;
-	
+void task_complete(struct sttask_t *ptsk, long vmflags , int task_code) {		
 	/* NOTE:
-	 * 	  .If vmflags has been marked with STTASK_VMARK_DONE, it indicates that 
+	 * 	   If vmflags has been marked with STTASK_VMARK_DONE, it indicates that 
 	 * 	 the @task_run has been excuted by the pool.
-	 *
-	 * 	  .If the task is added by @stpool_add_pri_task(2), @pri will be filled
-	 * 	 with the current priority informations of the task.
 	 */
 	if (!(STTASK_VMARK_DONE & vmflags)) {
 		printf("@task_run is not executed: 0x%lx-code:%d\n",
 			   vmflags, task_code /* STPOOL_XX */);	
 		
-		/* NOTE:
-		 * 		We can return a non-zero value to reschedule the task again even if
-		 * the task is not executed in this time. we just return 0 here.
-		 */
-		return 0;
+		return;
 	}
-	
-	/* The task can be delivered into the pool again if user has not called 
-	 * @stpool_mark_task/@stpool_disable_rescheduling to mark the task with 
-	 * STTASK_VMARK_DISABLE_RESCHEDULE flag.
-	 */
-	if (!(STTASK_VMARK_DISABLE_RESCHEDULE & vmflags)) {
-		if (g_test_reschedule) {
-			/* We can adjust the task's priority if the task is added
-			 * by @stpool_pri_add_task 
-			 */
-			if (pri) {
-				/* Modify the task's priority attribute here */
-				pri->pri = random() % 99;
-				pri->pri_policy = pri->pri_policy;
-				
-				/* Notify the pool that we have modified the schedule policy */
-				reschedule = 2;
-			} else
-				reschedule = 1;	
-			
-			/* We sleep for a while to slow down the test */
-			//msleep(1500);
-		}
-	}
-	
-	return reschedule;
+		
+
+	if (g_test_reschedule) {
+		struct schattr_t attr;
+		/* We can adjust the task's priority */
+		stpool_task_getschattr(ptsk, &attr);
+		attr.sche_pri = 80;
+		stpool_task_setschattr(ptsk, &attr);
+
+		/* Reschedule the task */
+		stpool_add_task(ptsk->hp_last_attached, ptsk);
+		
+		/* We sleep for a while to slow down the test */
+		msleep(1500);
+	}	
 }
 
 static int counter = 0;
-struct sttask_t task = {
-	"test", task_run, task_complete, (void *)&counter,
-};
 
-
-int task_run2(void *arg) {
+int task_run2(struct sttask_t *ptsk) {
 	static int i=0;
 
 	printf("@task_run2: %d\n", ++i);
-	msleep(20);
 	return 0;
 }
 
-int task_complete2(long vmflags, int task_code, void *arg, struct stpriority_t *pri) {	
-	if (!(STTASK_VMARK_DONE & vmflags)) 
+void task_complete2(struct sttask_t *ptsk, long vmflags, int task_code) {	
+	if (!(STTASK_VMARK_DONE & vmflags)) {
 		printf("@task_run2 is not executed: 0x%lx-code:%d\n",
 			vmflags, task_code);
+		return;
+	}
 	
-	return g_test_reschedule;
+	if (g_test_reschedule) {
+		stpool_add_task(ptsk->hp_last_attached, ptsk);
+		msleep(1500);
+	}
 }
 
-int mark_walk(struct stpool_tskstat_t *stat, void *arg) {
+long mark_walk(struct stpool_tskstat_t *stat, void *arg) {
 	/* If you want to stop walking the task, you should return -1 */
 	//return -1;
 	
@@ -104,8 +84,6 @@ int mark_walk(struct stpool_tskstat_t *stat, void *arg) {
 
 	/* Return the marks */
 	return STTASK_VMARK_REMOVE_BYPOOL /* Remove the task */
-			|
-		   STTASK_VMARK_DISABLE_RESCHEDULE /* Disable rescheduling the task */
 		   ;
 }
 
@@ -113,6 +91,10 @@ int main()
 {
 	int i, error;
 	HPOOL hp;
+	struct schattr_t attr = {
+		0, 1, STPOLICY_PRI_SORT_INSERTBEFORE
+	};	
+	struct sttask_t *ptsk;
 	
 	/* NO buffer */
 	setbuf(stdout, 0);
@@ -121,7 +103,7 @@ int main()
 	hp = stpool_create(20, /*limited threads number*/
 				       0,  /*number of threads reserved to waiting for tasks*/
 				       0,  /*do not suspend the pool */
-				       10  /*priority queue num */
+				       1   /*priority queue num */
 					   );
 	
 	/* Set the sleep time for the threads (10s + random() % 25s)*/
@@ -129,7 +111,7 @@ int main()
 	
 	/* Print the status of the pool */
 	printf("@tpool_create(20, 0, 0, 10)\n%s\n", stpool_status_print(hp, NULL, 0));
-
+		
 	/************************************************************/
 	/********************Test @stpool_adjust(_abs)****************/
 	/************************************************************/
@@ -148,10 +130,13 @@ int main()
 	/*******************************************************************/
 	printf("\nPress any key to test the throttle ....\n");
 	getchar();
+	/* Turn the throttle on */
 	stpool_throttle_enable(hp, 1);
-	error = stpool_add_task(hp, &task);
+	ptsk = stpool_task_new("test", task_run, task_complete, (void *)&counter);
+	error = stpool_add_task(hp, ptsk);
 	if (error)
 		printf("***@stpool_add_task error:%d\n", error);
+	/* Turn the throttle off */
 	stpool_throttle_enable(hp, 0);
 	
 	/*******************************************************************/
@@ -161,21 +146,21 @@ int main()
 	getchar();
 	
 	stpool_suspend(hp, 0);
-	/* Tasks added by @stpool_add_task have a zero priority, and they will be pushed 
-	 * into the lowest priority queue. 
+	/* Add a task with zero priority, and the task will be pushed into the 
+	 * lowest priority queue. 
 	 */
-	stpool_add_task(hp, &task);			
-	
+	stpool_add_routine(hp, "test", task_run, task_complete, (void *)&counter, NULL);
+		
 	/* @task_run2 will be scheduled prior to the @task_run since the @task_run2 has
 	 * a higher priority.
 	 */
-	stpool_add_pri_routine(hp, task_run2, task_complete2, NULL, 1, STPOLICY_PRI_SORT_INSERTBEFORE);	
+	stpool_add_routine(hp, "routine", task_run2, task_complete2, NULL, &attr); 
 	
 	/* Wake up the pool to schedule the tasks */
 	stpool_resume(hp);
 
 	/* Wait for all tasks' being done completely */
-	stpool_wait(hp, NULL, -1);
+	stpool_task_wait(hp, NULL, -1);
 	
 	/******************************************************************/
 	/****************Test rescheduling task****************************/
@@ -183,12 +168,12 @@ int main()
 	printf("\nPress any key to test reschedule task. <then press key to stop testing.>\n");
 	getchar();
 	g_test_reschedule = 1;
-	stpool_add_task(hp, &task);
-	stpool_add_routine(hp, task_run2, task_complete2, NULL);
+	stpool_add_task(hp, ptsk);
+	stpool_add_routine(hp, "routine", task_run2, task_complete2, NULL, NULL);
 	
 	getchar();
-	g_test_reschedule = 0;
-	stpool_wait(hp, NULL, -1);
+	g_test_reschedule = 0;	
+	stpool_task_wait(hp, NULL, -1);
 	
 	/******************************************************************/
 	/***************Test running amount of tasks***********************/
@@ -201,9 +186,9 @@ int main()
 	 * a large amount of tasks that will be added into the pool.
 	 */
 	/* NOTE: We can add the same task into the pool one more times */
-	for (i=0; i<1000; i++) {
-		stpool_add_task(hp, &task);	
-		stpool_add_routine(hp, task_run2, task_complete2, NULL);		
+	for (i=0; i<4000; i++) {
+		stpool_add_routine(hp, "test", task_run, task_complete, (void *)&counter, NULL);
+		stpool_add_routine(hp, "routine", task_run2, task_complete2, NULL, NULL);
 	}
 	
 	/****************************************************************/
@@ -212,17 +197,21 @@ int main()
 	printf("\nPress any key to test stoping all tasks fastly.\n");
 	getchar();
 
-	/* Remove all pending tasks by calling @stpool_mark_task,
-	 * We can also call @stpool_remove_pending_task(2) to reach
-	 * our goal, But we call @stpool_mark_task here for showing 
+	/* Remove all pending tasks by calling @stpool_mark_task_ex,
+	 * We can also call @stpool_remove_pending_task to reach our 
+	 * goal, But we call @stpool_mark_task_ex here for showing 
 	 * how to use @stpool_mark_task to do the customed works.
 	 */
-	stpool_mark_task(hp, NULL, mark_walk, hp);
+	stpool_mark_task_ex(hp, mark_walk, NULL);
+	stpool_throttle_enable(hp, 1);
 
 	/* Wait for all tasks' being done */
-	stpool_wait(hp, NULL, -1);
+	stpool_task_wait(hp, NULL, -1);
 	printf("---------------------------tasks have been finished.\n");
 	
+	/* Free the task object */
+	stpool_task_delete(ptsk);
+		
 	/* Release the pool */
 	printf("%s\n", stpool_status_print(hp, NULL, 0));
 	stpool_release(hp);
@@ -231,3 +220,5 @@ int main()
 	
 	return 0;
 }
+
+

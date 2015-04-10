@@ -7,49 +7,168 @@
 
 struct tpool_t;
 
+/* Status of the task */
 enum {
 	/* Task is waiting for being schuduled */
-	TASK_F_WAIT  = (short)0x01,
+	TASK_STAT_WAIT  = (short)0x01,
 	
 	/* Task is being scheduled */
-	TASK_F_SCHEDULING  = (short)0x02,
+	TASK_STAT_SCHEDULING  = (short)0x02,
 	
 	/* Task has been swaped from the ready queue since the 
 	 * pool that the task belong to has been marked suspened */
-	TASK_F_SWAPED = (short)0x04,
+	TASK_STAT_SWAPED = (short)0x04,
 	
 	/* Task has been done completely, and the pool is calling
-	 * @task_complete to give user a notification.
-	 */
-	TASK_F_DISPATCHING = (short)0x08,
+	 * @task_complete to give user a notification. */
+	TASK_STAT_DISPATCHING = (short)0x08,
+	
+	/* The task should be added into the pool automatically 
+	 * after having done the task */
+	TASK_STAT_WAIT_PENDING = (short)0x10,
 };
 
-struct task_ex_t {
+/* f_mask of the task */
+enum {
+	/* It indicates that the priority of the task is 
+	 * not zero */
+	TASK_F_PRI    = 0x01,
+	
+	/* It indicates that the task should be pushed into
+	 * the tail queue directly */
+	TASK_F_PUSH   = 0x02,
+
+	/* It indicates that the task should be recycled
+	 * by the pool automatically */
+	TASK_F_ONCE   = 0x04,
+	
+	/* It indicates that the task object is allocated 
+	 * by the memory pool */
+	TASK_F_MPOOL  = 0x08,
+
+	/* It indicates that the task's scheduling attribute
+	 * has been changed */
+	TASK_F_ADJPRI = 0x10,
+	
+	TASK_F_PRI_ONCE = 0x20,
+};
+
+/* f_vmflags of the task */
+enum {
+	/* @task_run has been executed */
+	TASK_VMARK_DONE = 0x0001,
+	
+	/* The task is removed by @tpool_remove_pending_task/@tpool_mark_task(ex)
+	 *    The user can mark tasks with TASK_VMARK_REMOVE_BYPOOL or 
+	 * TASK_VMARK_REMOVE_DIRECTLY, and as a result, the tasks will be removed 
+	 * from the pending queue.
+     *    If task is marked with TASK_VMARK_REMOVE_BYPOOL, @task_complete 
+	 * will be called by the pool. or @task_complete will be called by the 
+	 * functions who marks the task. 
+	 */
+	TASK_VMARK_REMOVE_BYPOOL = 0x0004,
+	TASK_VMARK_REMOVE_DIRECTLY = 0x0008,
+	
+	TASK_VMARK_REMOVE = TASK_VMARK_REMOVE_BYPOOL|TASK_VMARK_REMOVE_DIRECTLY,
+
+	/* The pool is being destroyed */
+	TASK_VMARK_POOL_DESTROYING = 0x0010,	
+	
+	/* The task should be done again */
+	TASK_VMARK_DO_AGAIN = 0x0020,
+};
+
+
+/* The policy to schedule the tasks */
+enum {
+	/* Insert our task before the tasks who has the same
+	 * priority exisiting in the pool.
+	 */
+	POLICY_PRI_SORT_INSERTBEFORE = 1,
+
+    /* Insert our task after the tasks who has the same
+	 * priority exisiting in the pool.
+	 */
+	POLICY_PRI_SORT_INSERTAFTER,
+};
+
+/* Priority attribute of the task */
+struct xschattr_t {
+	int permanent;
+
+	/* Priority of the task [0~99] */
+	int pri;
+
+	/* Priority policy of the task (POLICY_PRI_XX) */
+	int pri_policy;
+};
+
+/* The definition of the task object */
+struct task_t {
+	/* A const string to describle the task */
+	const char *task_name;
+	
+	/* @task_run will be called when the task is scheduled by the pool. 
+     *  user can do their works in this function.
+	 */
+	int  (*task_run)(struct task_t *ptsk);	
+
+	/*  	If @task_complete is not NULL, it will be called when one of the 
+	 *  conditions below matches.
+	 *       1. @task_run has been executed by the pool.
+	 *       2. The task is removed from the pool by @tpool_remove_pending_task
+	 *          or @tpool_mark_task(ex)
+	 *
+	 *   NOTE:
+	 *	   	If @task_run has been excuted by the pool, the argument @vmflags will
+	 * owns the mask TASK_VMARK_DONE, and the @task_code will be set to the value
+	 * returned by @task_run. or the the @task_code will be set properly. 
+	      (@see the error codes describled in the tpool.h)
+	 */
+	void (*task_complete)(struct task_t *ptsk, long vmflags, int task_code);
+
+	/* The argument reserved for task */
+	void *task_arg;
+	
+	/* The recent pool into which the task is added */
+	struct tpool_t *hp_last_attached;
+	
+	/* The servering thread */
+	struct tpool_thread_t *th;
+
+	/* The waiters number */
+	uint16_t waiters;
+
+	/* Whether the task has been detached to the pool */
+	uint16_t detached:1;
+	uint16_t do_again:1;
+	uint16_t resv:14;
+	uint8_t *pdetached;
+
+	/* The priority attribute of the task */
 	uint16_t pri:7;
 	uint16_t pri_q:7;
 	uint16_t pri_policy:2;
+	
+	/* Flags of the task */
 	union {
 		uint16_t f_flags;
 		struct {
 			uint16_t f_stat:4;
-			uint16_t f_vmflags:9;
-			uint16_t f_pri:1;
-			uint16_t f_push:1;
-			uint16_t f_wait:1;
+			uint16_t f_vmflags:6;
+			uint16_t f_mask:6;
 		};
 	} uflags0;
 #define f_flags    uflags0.f_flags
-#define f_stat     uflags0.f_stat
 #define f_vmflags  uflags0.f_vmflags
-#define f_pri      uflags0.f_pri
-#define f_push     uflags0.f_push
-#define f_wait     uflags0.f_wait	
-#define f_notified uflags0.f_notified
-	struct task_t *tsk;
+#define f_stat     uflags0.f_stat
+#define f_mask     uflags0.f_mask
 	struct xlink wait_link;
 	struct xlink trace_link;
 };
 
+
+/* Status of the working threads */
 enum {
 	THREAD_STAT_INIT,        /*Initializing*/ 
 	THREAD_STAT_JOIN,        /*Joing*/
@@ -64,6 +183,16 @@ enum {
 	THREAD_STAT_INNER  = THREAD_STAT_RM
 };
 
+/* Task type */
+enum {
+	/* A removed task */
+	TASK_TYPE_DISPATCHED = 0x1,
+	
+	/* A garbage collection task */
+	TASK_TYPE_GC = 0x2,
+};
+
+/* The definition of the thread object */
 struct tpool_thread_t {
 	uint8_t run;
 
@@ -80,17 +209,18 @@ struct tpool_thread_t {
 	/* The rest counter */
 	uint16_t ncont_rest_counters;
 
-	/* The current task that the thread is servering. */
-	uint8_t is_dispatched_task;
-	uint8_t resv;
-	struct  task_ex_t *current_task;
+	/* The current task that the thread is servering for. */
+	uint8_t  task_type;  
+	uint8_t  detached;
+	void (*task_complete)(struct task_t *, long, int);
+	struct   task_t *current_task;
 
-#ifdef _OPTIMIZE_PTHREAD_CREATE
-	struct xlink link_launcher;
-#endif	
 	/* Optimize */
 	struct xlink link_free;
 	long   thread_id;
+#ifdef _UNLOCK_PTHREAD_CREATE	
+	XLIST  thq;
+#endif
 
 	/* The task pool that the thread belongs to */
 	struct tpool_t *pool;
@@ -99,9 +229,11 @@ struct tpool_thread_t {
 	/* If the thread has gotten a task from the pool,
 	 * the thread will be pushed into the running queue
 	 */
-	struct xlink run_link;
+	struct xlink run_link;	
 };
+#define THREAD_CRTQ_task(link) XCOBJEX(link, struct tpool_thread_t, link_free)
 
+/* The status of the pool */
 enum {
 	POOL_F_CREATING    = (long)0x01, 
 	POOL_F_CREATED     = (long)0x02,
@@ -147,96 +279,31 @@ struct tpool_tskstat_t {
 	struct task_t *task;
 };
 
-/* The policy to schedule the tasks */
-enum {
-	/* Insert our task before the tasks who has the same
-	 * priority exisiting in the pool.
-	 */
-	POLICY_PRI_SORT_INSERTBEFORE = 1,
-
-    /* Insert our task after the tasks who has the same
-	 * priority exisiting in the pool.
-	 */
-	POLICY_PRI_SORT_INSERTAFTER,
-};
-
+/* Priority queue */
 struct tpool_priq_t {
 	struct xlink link;
 	int    index;
 	XLIST  task_q;
 };
 
-/* A physical CPU ---> n logic CPUs
- *
- * HT support:
- * 	 One more cores has the same core ID,
- * and all of the them have the same physical
- * CPU id.
- *		ht_support = cpu.nlogic_cores > cpu.nphysical_cores
- *
- */
-struct cpu_t {
-	int physical_cpu_id;
-	int nlogic_cores;
-	int nphysical_cores;
-	int ht_support;
-	int nthreads_parallel;
-};
-
-/* extensions */
-enum {
-	EV_TRG_THREADS = 1,
-	EV_TRG_TASKS,
-	EV_TRG_THREADS_OR_TASKS,
-	EV_TRG_THREADS_AND_TASKS,
-};
-
-enum {
-	EV_FLT_DISCARD = 1,
-	EV_FLT_WAIT,
-	EV_FLT_WAIT2,
-	EV_FLT_PASS,
-};
-
-struct brf_stat_t {
-	/* The number of current pending task of the pool */
-	int ntasks_pendings;
-	
-	/* The number of running threads of the pool */
-	int nthreads_running;
-	
-	/* Is the pool busy now ? */
-	int evflt_busy;
-};
-
-struct evflt_res_t {
-	uint32_t ev_flttyp:6;
-	uint32_t ev_param:26;
-};
-
-struct event_t {
-	int ev_threads_num;
-	int ev_tasks_num;
-	long ev_triggle_type;
-	struct evflt_res_t (*ev_filter)(struct tpool_t *pool, struct event_t *ev, struct brf_stat_t *brfstat, struct task_t *task);
-	void *ev_arg;
-};
-
+/* The definition of the pool object */
 struct tpool_t {
 	long status;
 	int  paused;
-	int  waiters, suspend_waiters;
-	int  waiters_all;
+	int  release_cleaning;
 	
-	/* information of CPUs */
-	int ncpus;
-	struct cpu_t *cpu;
-	int ncpu_threads, ntasks_cpu_suggest;
+	/* Waiters' env */
+	int  waiters, suspend_waiters;
+	XLIST wq;
 
 	/* Object memory pool */
-#ifdef _USE_MPOOL	
-	struct mpool_t *mp1, *mp2;
-#endif
+	struct mpool_t *mp;
+
+	/* GC env */
+	XLIST  clq, gcq;
+	struct tpool_thread_t *GC;
+	struct task_t sys_GC_task;
+	
 	/* @ref is the references of the pool, and the
 	 * @user_ref is the references of users who is 
 	 * using our pool.
@@ -247,67 +314,49 @@ struct tpool_t {
 	void (*atexit)(struct tpool_t *, void *);
 	void *atexit_arg;
 	
-	/* event filter */
-	struct event_t ev;
-	int ev_enable, ev_filter_wokeup;
-	int ev_thread_waiters;
-	int ev_task_waiters;
-	OSPX_pthread_cond_t cond_ev;
-
-	/* task throttle */
-	int throttle_enabled;
-	int64_t npendings;
+	/* global env */
+	long threads_wait_throttle, acttimeo, randtimeo;
+	int  limit_threads_free, limit_threads_create_per_time;
 	
-	/* service threads env */
-	XLIST ths, freelst, ths_waitq;
-	char *buffer;
-	long launcher;
-	int  release_cleaning;
+	/* task env */
 	int  ndispatchings;
+	int64_t npendings;
+	XLIST ready_q, trace_q, dispatch_q;
+	OSPX_pthread_cond_t  cond_comp;
+	
+	/* throttle env */
+	int throttle_enabled;
+	OSPX_pthread_cond_t cond_ev;
+	
+	/* variable for pending event */
+	int npendings_ev;
+
+	/* service threads env */
+	char *buffer;
+	int  maxthreads, minthreads;
+	XLIST ths, freelst, ths_waitq;
+	long launcher;
 	int  nthreads_running, nthreads_dying, nthreads_dying_run;
 	int  nthreads_going_rescheduling, nthreads_waiters;
-	int  maxthreads, minthreads;
-	int  limit_threads_free, limit_threads_create_per_time;
 	int  ncont_completions, limit_cont_completions;
-	long threads_wait_throttle, acttimeo, randtimeo;
 	int  nthreads_real_sleeping, nthreads_real_pool;
+	OSPX_pthread_cond_t cond_ths;
 		
 	/* Statics report */
 	size_t nthreads_peak, ntasks_peak;
 
 	/* priority queue */
 	uint16_t pri_q_num, avg_pri;
-	uint16_t pri_reschedule;
 	struct tpool_priq_t *pri_q;
 
-#ifdef _OPTIMIZE_PTHREAD_CREATE
-	XLIST launcherq;
-	int launcher_run;
-	OSPX_pthread_cond_t cond_launcher;
-	#define mut_launcher mut
-#endif
-
-	/* Rubbish env */	
-#ifdef _CLEAN_RUBBISH_INBACKGROUND
-	XLIST clq;
-	int rubbish_run;
-	OSPX_pthread_cond_t cond_garbage;
-	#define mut_garbage mut
-#endif
 	/* condition var is more effecient than the
 	 * semaphore in our pool implemention.
 	 */
 	OSPX_pthread_cond_t  cond;
-	OSPX_pthread_cond_t  cond_ths;
-	OSPX_pthread_cond_t  cond_comp;
-	XLIST ready_q, trace_q, dispatch_q;
 	OSPX_pthread_mutex_t mut;
 };
-#define POOL_Q_thread(link)    XCOBJ(link, struct tpool_thread_t)
-#define POOL_RUNQ_thread(link) XCOBJEX(link, struct tpool_thread_t, run_link)
-#define POOL_RMQ_thread(link)  XCOBJEX(link, struct tpool_thread_t, rm_link)
+#define POOL_Q_thread(link)     XCOBJ(link, struct tpool_thread_t)
+#define POOL_TRACEQ_task(link)  XCOBJEX(link, struct task_t, trace_link)
+#define POOL_READYQ_task(link)  XCOBJEX(link, struct task_t, wait_link)
 
-#define POOL_TRACEQ_task(link)  XCOBJEX(link, struct task_ex_t, trace_link)
-#define POOL_RUNQ_task(link)    XCOBJEX(link, struct task_ex_t, wait_link)
-#define POOL_READYQ_task(link)  XCOBJEX(link, struct task_ex_t, wait_link)
 #endif

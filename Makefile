@@ -7,28 +7,21 @@ CC    :=$(CROSS)gcc
 AR    :=$(CROSS)ar
 STRIP :=$(CROSS)strip
 
-TARGET  :=libstpool.a libstpool.so  demo demo_pri demo_sche demo_filter
-OBJS_tpool :=stpool.o tpool.o ospx.o  ospx_error.o
+TARGET  :=libstpool.a libstpool.so  demo demo_pri demo_sche
+OBJS_tpool :=stpool.o tpool.o ospx.o  ospx_error.o mpool.o
 OBJS_DIR :=.obj
 VPATH =.:src
 
 #Thanks for @pengjiasi: 
 #       The GCC option -fPIC should be set at the compiling step.
 
-#CFLAGS  =-Isrc -s -O2 -DNDEBUG -fPIC
-CFLAGS  =-Isrc -g -fPIC
+#CFLAGS  =-Isrc -s -O2 -DNDEBUG -fPIC 
+
+CFLAGS  =-Isrc -g -fPIC 
 
 ARFLAGS = -rv
 STRIPFLAGS = -xXg
 
-ifneq (y, $(DISABLE_USE_MPOOL))
-CFLAGS += -D_USE_MPOOL
-OBJS_tpool += mpool.o
-endif
-
-ifneq (y, $(DISABLE_CLEAN_RUBBISH_INBACKGROUND))
-CFLAGS += -D_CLEAN_RUBBISH_INBACKGROUND
-endif
 
 all:PREPARE $(TARGET)
 

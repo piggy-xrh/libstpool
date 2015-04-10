@@ -18,6 +18,7 @@ typedef struct {
 	int     size;
 } XLIST;
 
+#define LIST_VERIFY_ENABLE
 #ifdef LIST_VERIFY_ENABLE
 #define LIST_assert(expr) assert(expr)
 #else

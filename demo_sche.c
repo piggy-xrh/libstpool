@@ -11,16 +11,15 @@
 #endif
 
 static void do_work(int *val) {
-	*val += 100;
+	*val *= 0.2;
 }
 
-int  task_run(void *arg) {
+int  task_run(struct sttask_t *ptsk) {
 	size_t i, j, sed = 20;
 	
 	for (i=0; i<sed; i++)
 		for (j=0; j<sed; j++)
-			/* We use the arg to disable the complier optimizing the codes */
-			do_work((int *)arg);
+			do_work((int *)ptsk->task_arg);
 	
 	/* Do not call @printf in the test since it will waste our 
 	 * so much time on competing the IO.
@@ -47,13 +46,13 @@ int main()
 
 	/* Creat a task pool */
 	hp = stpool_create(50,  /* max servering threads */
-			           1,   /* 0 servering threads that reserved for waiting for tasks */
+			           0,   /* 0 servering threads that reserved for waiting for tasks */
 			           1,   /* suspend the pool */
 			           0);  /* default number of priority queue */
 	printf("%s\n", stpool_status_print(hp, NULL, 0));
 		
 	/* Add tasks */
-	times = 900000;
+	times = 90;//900000;	
 	arg = (int *)malloc(times * sizeof(int));
 	for (i=0; i<times; i++) {
 		/* It'll take a long time if the program is linked with the debug library */
@@ -62,21 +61,20 @@ int main()
 			fflush(stdout);
 		}
 		arg[i] = i;
-		stpool_add_routine(hp, task_run, NULL, (void *)&arg[i]);	
+		stpool_add_routine(hp, "sche", task_run, NULL, (void *)&arg[i], NULL);	
 	}
-	
 	printf("\nAfter having executed @stpool_add_routine for %d times:\n"
 		   "--------------------------------------------------------\n%s\n", 
 		   times, stpool_status_print(hp, NULL, 0));
-
+	
 	printf("Press any key to resume the pool.\n");
-	//getchar();
+	getchar();
 	
 	/* Wake up the pool to schedule tasks */
 	stpool_resume(hp);
 
 	/* Wait for all tasks' being done. */
-	stpool_wait(hp, NULL, -1);
+	stpool_task_wait(hp, NULL, -1);
 	
 	/* Get the sum */
 	for (i=0, sum=0; i<times; i++)
@@ -88,9 +86,10 @@ int main()
 		sum, ctime(&now), stpool_status_print(hp, NULL, 0));
 #if 0
 	/* You can use debug library to watch the status of the pool */
-	while('q' != getchar()) {
+	while ('q' != getchar()) {
 		for (i=0; i<40; i++)
-			stpool_add_routine(hp, task_run, NULL, NULL);	
+			stpool_add_routine(hp, "debug", task_run, NULL, &sum, NULL);	
+		usleep(20);
 	}
 
 	/* Clear the stdio cache */
