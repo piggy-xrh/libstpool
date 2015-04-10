@@ -525,18 +525,9 @@ tpool_release_ex(struct tpool_t *pool, int decrease_user, int wait_threads_on_cl
 		assert(XLIST_EMPTY(&pool->ths)); 	
 		tpool_setstatus(pool, POOL_F_DESTROYED, 0);		
 		
-		/* Remove all pending tasks since none servering threads
-		 * existing in the pool.
-		 */
-		if (pool->paused)
-			tpool_remove_pending_task(pool, 0);	
-		/* @tpool_remove_pending_task may be called by user,
-		 * so we call @tpool_task_wait here to make sure that all
-		 * tasks have been done before our's destroying the
-		 * pool env.
-		 */
-		tpool_task_wait(pool, NULL, -1);
-	
+		/* DEBUG check */
+		assert(XLIST_EMPTY(&pool->trace_q));
+					
 		/* Now we can free the pool env safely */
 #ifndef NDEBUG
 		{
@@ -1556,7 +1547,7 @@ rmwalk(struct tpool_tskstat_t *stat, void *arg) {
 int  
 tpool_remove_pending_task(struct tpool_t *pool, int dispatched_by_pool) {
 	return tpool_mark_task_ex(pool, rmwalk, dispatched_by_pool ?
-				(void *)TASK_VMARK_REMOVE_DIRECTLY : (void *)TASK_VMARK_REMOVE_BYPOOL);
+				(void *)TASK_VMARK_REMOVE_BYPOOL : (void *)TASK_VMARK_REMOVE_DIRECTLY);
 }
 
 struct waiter_link_t {
