@@ -19,7 +19,7 @@ int  task_run(struct sttask_t *ptsk)	{
 
 void task_complete(struct sttask_t *ptsk, long vmflags, int task_code) {
 	struct schattr_t attr;
-	
+	int code;
 	/* Acquire the scheduling attribute */
 	stpool_task_getschattr(ptsk, &attr);
 	
@@ -29,8 +29,13 @@ void task_complete(struct sttask_t *ptsk, long vmflags, int task_code) {
 	msleep(1000);
 	
 	/* Reschedule the task if the task has been done successfully */
-	if (STTASK_VMARK_DONE & vmflags) 
-		stpool_add_task(ptsk->hp_last_attached, ptsk);	
+	if (STTASK_VMARK_DONE & vmflags) {
+		int err = stpool_add_task(ptsk->hp_last_attached, ptsk);	
+		if (err) {
+			fprintf(stderr, "**ERR: add '%s' (%d)\n",
+				ptsk->task_name, err);
+		}
+	}
 }
 
 int main()
@@ -57,13 +62,12 @@ int main()
 	stpool_resume(hp);
 	
 	getchar();
-	
 	/* Remove all tasks */
 	stpool_remove_pending_task(hp, NULL, 0);
 
 	/* Turn the throttle on */
 	stpool_throttle_enable(hp, 1);
-			
+	
 	/* Wait for all tasks' completions */
 	stpool_task_wait(hp, NULL, -1);
 	

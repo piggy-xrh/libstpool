@@ -520,8 +520,8 @@ EXPORT long stpool_gettskstat(HPOOL hp, struct stpool_tskstat_t *stat);
  *                  for all the scheduling tasks' completions. 
  *                  (Some tasks maybe is being scheduled while user calls
  *                   @stpool_suspend, the pool give users a choices to determine 
- *                   whether the @stpool_suspend wait for the scheduling tasks' 
- *                   completions)
+ *                   whether the @stpool_suspend should wait for the scheduling 
+ *                   tasks' completions)
  *
  * Return:
  *	  None
@@ -709,6 +709,26 @@ EXPORT void stpool_detach_task(HPOOL hp, struct sttask_t *ptsk);
 */
 EXPORT void stpool_throttle_enable(HPOOL hp, int enable);
 
+/* @stpool_wkid
+ *	   User can save the wkid before his calling the wait functions such as 
+ *@stpool_throttle_wait, @stpool_wait(1/2/3/ex) and @stpool_pending_leq_wait.
+ *and then call stpool_wakeup(wkid) to wake up these wait functions. Actually, 
+ *the wkid returned by @stpool_wkid is the thread id.
+ *	
+ *	  model:
+ *	        thread1:                                  thread2:
+ *	           wkid = stpool_wkid(); 
+ *	           stpool_task_wait(...)   wake up
+ *	           	                    <-----------   stpool_wakeup(wkid)
+ *
+ * Arguments:
+ *     None
+ *
+ * Return:
+ *	  The id used to wake up the wait functions
+ */
+EXPORT long stpool_wkid();
+
 /* @stpool_throttle_wait
  *		If the throttle's switcher is on, the call will not return
  * util some users call @stpool_throttle_enable(hp, 0) to turn it 
@@ -761,26 +781,18 @@ EXPORT int  stpool_task_wait3(HPOOL hp, struct sttask_t *entry, int *n, long ms)
 EXPORT int  stpool_task_waitex(HPOOL hp, int (*sttask_match)(struct stpool_tskstat_t *stat, void *arg), void *arg, long ms); 
 EXPORT int  stpool_pending_leq_wait(HPOOL hp, int n_max_pendings, long ms);
 
-#define WK_T_DISABLE_WAIT 0x01  /* Wake up @stpool_throttle_disabled_wait */
-#define WK_T_WAIT   0x02        /* Wake up @stpool_task_wait */
-#define WK_T_WAIT2  0x04        /* Wake up @stpool_task_wait2 */
-#define WK_T_WAIT3  0x08        /* Wake up @stpool_task_wait3 */
-#define WK_T_WAITEX 0x10        /* Wake up @stpool_task_waitex */
-#define WK_T_PENDING_WAIT 0x20  /* Wake up @stpool_pending_leq_wait */
-#define WK_T_WAIT_ALL  (long)-1 
-
 /* @stpool_wakeup
  *		 Wake up the wait functions such as @stpool_throttle_disabled_wait,
  * @stpool_task_wait, @stpool_task_wait2, @stpool_task_wait3 and so on.
  * 
  * Arguments:
  *    @hp          [in]  the pool handle 
- 
- *    @wakeup_type [in]  WK_T_X                    
  *
+ *    @wkid        [in]  the wkid returned by stpool_wkid(), stpool_wakeup(-1)
+ *                       will wake up all of the wait functions
  * Return:
  *	  None
  */
-EXPORT void stpool_wakeup(HPOOL hp, long wakeup_type);
+EXPORT void stpool_wakeup(HPOOL hp, long wkid);
 
 #endif

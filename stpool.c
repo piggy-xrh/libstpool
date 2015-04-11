@@ -291,6 +291,11 @@ stpool_detach_task(HPOOL hp, struct sttask_t *tsk) {
 	                  (struct task_t *)tsk);
 }
 
+long 
+stpool_wkid() {
+	return tpool_wkid();
+}
+
 int  
 stpool_task_wait(HPOOL hp, struct sttask_t *tsk, long ms) {
 	return tpool_task_wait((struct tpool_t *)hp,

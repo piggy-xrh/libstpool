@@ -63,16 +63,18 @@ int OSPX_library_init(long lflags) {
 	}
 		
 	if (installer) {
-		uint8_t em;
+		static uint8_t sl_sys_em = 0;
 		
 		/* Register the default error function */ 
-		em = OSPX_M_SYS;
-		if (OSPX_error_register(&em, "Sys", OSPX_sys_strerror)) {
-			fprintf(stderr, "@%s-OSPX_error_register error: %s\n",
-				__FUNCTION__, strerror(errno));
+		if (!sl_sys_em) {
+			sl_sys_em = OSPX_M_SYS;
+			if (OSPX_error_register(&sl_sys_em, "Sys", OSPX_sys_strerror)) {
+				fprintf(stderr, "@%s-OSPX_error_register error: %s\n",
+					__FUNCTION__, strerror(errno));
 			
-			/* We just ignore the error */
-		}	
+				/* We just ignore the error */
+			}	
+		}
 	}
 	
 	return 0;
@@ -366,15 +368,19 @@ int OSPX_pthread_cond_destroy(OSPX_pthread_cond_t *cond) {
 #endif
 
 EXPORT
-int OSPX_pthread_cond_timedwait(OSPX_pthread_cond_t *cond, OSPX_pthread_mutex_t *mut, long *timeout) {
-#ifdef _WIN32
+int OSPX_pthread_cond_timedwait(OSPX_pthread_cond_t *cond, OSPX_pthread_mutex_t *mut, long *to) {
 	int error = 0;
+	struct timeval tv_0, tv_1;
+#ifdef _WIN32
 	int generation_at_start;
 	int waiting = 1;
 	int result = -1;
-	DWORD ms = INFINITE, ms_orig = INFINITE, startTime, endTime;
-	if (timeout)
-		ms_orig = ms = *timeout;
+	DWORD ms = INFINITE, to_orig = INFINITE, startTime, endTime;
+	if (to) {
+		to_orig = ms = *to;	
+		if (to_orig > 0)
+			OSPX_gettimeofday(&tv_0, NULL);
+	}
 
 	EnterCriticalSection(&cond->section);
 	++cond->n_waiting;
@@ -395,19 +401,19 @@ int OSPX_pthread_cond_timedwait(OSPX_pthread_cond_t *cond, OSPX_pthread_mutex_t 
 			waiting = 0;
 			goto out;
 		} else if (res != WAIT_OBJECT_0) {
-			error = (res==WAIT_TIMEOUT) ? ETIMEDOUT : -1;
+			error = (res==WAIT_to) ? ETIMEDOUT : -1;
 			--cond->n_waiting;
 			waiting = 0;
 			goto out;
 		} else if (ms != INFINITE) {
 			endTime = GetTickCount();
-			if (startTime + ms_orig <= endTime) {
-				error = ETIMEDOUT; /* Timeout */
+			if (startTime + to_orig <= endTime) {
+				error = ETIMEDOUT; /* to */
 				--cond->n_waiting;
 				waiting = 0;
 				goto out;
 			} else {
-				ms = startTime + ms_orig - endTime;
+				ms = startTime + to_orig - endTime;
 			}
 		}
 		/* If we make it here, we are still waiting. */
@@ -426,24 +432,39 @@ int OSPX_pthread_cond_timedwait(OSPX_pthread_cond_t *cond, OSPX_pthread_mutex_t 
 		ResetEvent(cond->hEvent);
 	LeaveCriticalSection(&cond->section);
 
-	return error;
+	if (to && *to > 0)
+		OSPX_gettimeofday(&tv_1, NULL);
 #else
-	if (timeout && 0 <= *timeout) {
+	if (to && 0 <= *to) {
 		struct timespec abstime = {0};
 		
 		clock_gettime(CLOCK_REALTIME, &abstime);
-		abstime.tv_nsec += (*timeout % 1000) *1000000;
-		abstime.tv_sec  += *timeout / 1000;
+		abstime.tv_nsec += (*to % 1000) *1000000;
+		abstime.tv_sec  += *to / 1000;
 		if (abstime.tv_nsec > 1000000000) {
 			abstime.tv_sec  += 1;
 			abstime.tv_nsec -= 1000000000;
 		}
 		
-		return pthread_cond_timedwait(cond, mut, &abstime);
-	}
+		OSPX_gettimeofday(&tv_0, NULL);
+		error = pthread_cond_timedwait(cond, mut, &abstime);
+		OSPX_gettimeofday(&tv_1, NULL);
+	} else	
+		error = pthread_cond_wait(cond, mut);
+#endif	
 	
-	return pthread_cond_wait(cond, mut);
-#endif
+	if (to && *to > 0) {	
+		uint64_t utime0, utime1;
+
+		utime0 = tv_0.tv_sec * 1000 + tv_0.tv_usec / 1000;
+		utime1 = tv_1.tv_sec * 1000 + tv_1.tv_usec / 1000;
+		if (utime1 <= utime0)
+			*to = 0;
+		else
+			*to = (long)(utime1 - utime0);
+	}
+
+	return error;
 }
 
 #ifdef _WIN32

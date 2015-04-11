@@ -37,14 +37,16 @@ void task_complete(struct sttask_t *ptsk, long vmflags , int task_code) {
 		return;
 	}
 		
-
 	if (g_test_reschedule) {
 		struct schattr_t attr;
 		/* We can adjust the task's priority */
 		stpool_task_getschattr(ptsk, &attr);
-		attr.sche_pri = 80;
-		stpool_task_setschattr(ptsk, &attr);
-
+		if (!attr.permanent) {
+			attr.permanent = 1;
+			attr.sche_pri  = 80;
+			stpool_task_setschattr(ptsk, &attr);
+		}
+		
 		/* Reschedule the task */
 		stpool_add_task(ptsk->hp_last_attached, ptsk);
 		

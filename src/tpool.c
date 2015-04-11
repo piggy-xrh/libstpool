@@ -1269,32 +1269,6 @@ tpool_throttle_enable(struct tpool_t *pool, int enable) {
 	OSPX_pthread_mutex_unlock(&pool->mut);
 }
 
-int  
-tpool_throttle_wait(struct tpool_t *pool, long ms) {
-	int error;
-
-	OSPX_pthread_mutex_lock(&pool->mut);
-	if (!ms)
-		error = pool->throttle_enabled ? 1 : 0;
-	else
-		for (error=0;;) {
-			if (!pool->throttle_enabled || !(POOL_F_CREATED & pool->status)) {
-				error = pool->throttle_enabled ? 2 : 0;
-				break;
-			}
-			if (ETIMEDOUT == error)
-				break;
-				
-			if (-1 != ms)
-				error = OSPX_pthread_cond_timedwait(&pool->cond_ev, &pool->mut, &ms);
-			else
-				error = OSPX_pthread_cond_wait(&pool->cond_ev, &pool->mut);
-		}
-	OSPX_pthread_mutex_unlock(&pool->mut);
-
-	return error ? 1 : 0;
-}
-
 void 
 tpool_suspend(struct tpool_t *pool, int wait) {	
 	/* We set the flag with no locking the pool to speed the progress */
@@ -1495,7 +1469,7 @@ tpool_add_task_l(struct tpool_t *pool, struct task_t *ptsk) {
 			assert(link);
 		}
 	}
-
+	
 	if (!pool->paused) {
 		if (pool->npendings == XLIST_SIZE(&pool->dispatch_q) - 1) 
 			pool->ncont_completions = 0;
@@ -1552,26 +1526,25 @@ tpool_remove_pending_task(struct tpool_t *pool, int dispatched_by_pool) {
 
 struct waiter_link_t {
 	int  pushed;
-	long type;
+	long call;
+	long wkid;
 	struct xlink link;
 };
 
-#define WPUSH(pool, type) \
+#define WPUSH(pool, call, id) \
 	{\
 		struct waiter_link_t wl = {\
-			1, type, {0, 0}\
+			1, call, id, {0, 0}\
 		};\
 		XLIST_PUSHBACK(&(pool)->wq, &wl.link);
 
 #define WPOP(pool, wokeup) \
-		if (1 == wl.pushed)  \
-			XLIST_REMOVE(&(pool)->wq, &wl.link);\
-		else \
-			wokeup = 1; \
+		XLIST_REMOVE(&(pool)->wq, &wl.link);\
+		wokeup = (1 != wl.pushed); \
 	} 
 
 void 
-tpool_wakeup(struct tpool_t *pool, long wakeup_type) {
+tpool_wakeup(struct tpool_t *pool, long wkid) {
 	long lwoke = 0;
 	struct xlink *link;
 	struct waiter_link_t *wl;
@@ -1579,36 +1552,75 @@ tpool_wakeup(struct tpool_t *pool, long wakeup_type) {
 	OSPX_pthread_mutex_lock(&pool->mut);
 	XLIST_FOREACH(&pool->wq, &link) {
 		wl = XCOBJ(link, struct waiter_link_t);
-		if (wl->type & wakeup_type) {
-			if (2 == ++ wl->pushed && !(lwoke & wl->type)) {
-				/* Wake up the waiters */
-				switch (wl->type) {
-				case WK_T_DISABLE_WAIT: 
-				case WK_T_PENDING_WAIT:
-					OSPX_pthread_cond_broadcast(&pool->cond_ev);
-					lwoke |= WK_T_DISABLE_WAIT|WK_T_PENDING_WAIT;
-					break;
-				case WK_T_WAIT:   
-				case WK_T_WAIT2:
-				case WK_T_WAIT3:
-				case WK_T_WAITEX:
-					 OSPX_pthread_cond_broadcast(&pool->cond_comp);
-					lwoke |= WK_T_WAIT|WK_T_WAIT2|
-							 WK_T_WAIT3|WK_T_WAITEX;
-					 break;
-				case WK_T_WAIT_ALL: 	
-					OSPX_pthread_cond_broadcast(&pool->cond_ev);
-					OSPX_pthread_cond_broadcast(&pool->cond_comp);
-					lwoke |= WK_T_WAIT_ALL;
-					break;
-				default:
-					/* It'll never be done */
-					abort();
-				}
-			}	
+		if (wkid != -1 && wl->wkid != wkid)
+			continue;
+		
+		if (2 == ++ wl->pushed && !(lwoke & wl->call)) {
+			/* Wake up the waiters */
+			switch (wl->call) {
+			case WK_T_THROTTLE_WAIT: 
+			case WK_T_PENDING_WAIT:
+				OSPX_pthread_cond_broadcast(&pool->cond_ev);
+				lwoke |= WK_T_THROTTLE_WAIT|WK_T_PENDING_WAIT;
+				break;
+			case WK_T_WAIT:   
+			case WK_T_WAIT2:
+			case WK_T_WAIT3:
+			case WK_T_WAITEX:
+				 OSPX_pthread_cond_broadcast(&pool->cond_comp);
+				lwoke |= WK_T_WAIT|WK_T_WAIT2|
+						 WK_T_WAIT3|WK_T_WAITEX;
+				 break;
+			case WK_T_WAIT_ALL: 	
+				OSPX_pthread_cond_broadcast(&pool->cond_ev);
+				OSPX_pthread_cond_broadcast(&pool->cond_comp);
+				lwoke |= WK_T_WAIT_ALL;
+				break;
+			default:
+				/* It'll never be done */
+				abort();
+			}
 		}
 	}
 	OSPX_pthread_mutex_unlock(&pool->mut);
+}
+
+long
+tpool_wkid() {
+	return (long)OSPX_pthread_id();
+}
+
+int  
+tpool_throttle_wait(struct tpool_t *pool, long ms) {
+	int error, wokeup = 0;
+
+	OSPX_pthread_mutex_lock(&pool->mut);
+	if (!ms)
+		error = pool->throttle_enabled ? 1 : 0;
+	else
+		for (error=0;;) {
+			if (!pool->throttle_enabled || !(POOL_F_CREATED & pool->status)) {
+				error = pool->throttle_enabled ? 2 : 0;
+				break;
+			}
+			if (ETIMEDOUT == error)
+				break;
+			
+			if (wokeup) {
+				error = -1;
+				break;
+			}
+
+			WPUSH(pool, WK_T_THROTTLE_WAIT, tpool_wkid())
+			if (-1 != ms)
+				error = OSPX_pthread_cond_timedwait(&pool->cond_ev, &pool->mut, &ms);
+			else
+				error = OSPX_pthread_cond_wait(&pool->cond_ev, &pool->mut);
+			WPOP(pool, wokeup)
+		}
+	OSPX_pthread_mutex_unlock(&pool->mut);
+
+	return error ? 1 : 0;
 }
 
 int  
@@ -1649,7 +1661,7 @@ tpool_task_wait(struct tpool_t *pool, struct task_t *ptsk, long ms) {
 		++ pool->waiters;	
 
 		/* Wait for the tasks' completions in ms millionseconds */
-		WPUSH(pool, WK_T_WAIT)
+		WPUSH(pool, WK_T_WAIT, tpool_wkid())
 		if (-1 != ms)
 			error = OSPX_pthread_cond_timedwait(&pool->cond_comp, &pool->mut, &ms);
 		else
@@ -1667,7 +1679,7 @@ tpool_task_wait(struct tpool_t *pool, struct task_t *ptsk, long ms) {
 
 
 static int  
-tpool_task_wait_ex(struct tpool_t *pool, int call, struct task_t *entry, int *n, int nlimit, long ms) {
+tpool_task_wait_ex(struct tpool_t *pool, long call, struct task_t *entry, int *n, int nlimit, long ms) {
 	int error, ok;
 	int i, wokeup = 0, num = *n;
 	
@@ -1720,7 +1732,7 @@ tpool_task_wait_ex(struct tpool_t *pool, int call, struct task_t *entry, int *n,
 		pool->waiters += num;
 
 		/* Wait for the tasks' completions in ms millionseconds */
-		WPUSH(pool, call)
+		WPUSH(pool, call, tpool_wkid())
 		if (-1 != ms)
 			error = OSPX_pthread_cond_timedwait(&pool->cond_comp, &pool->mut, &ms);
 		else
@@ -1801,7 +1813,7 @@ tpool_task_waitex(struct tpool_t *pool, int (*task_match)(struct tpool_tskstat_t
 		++ ptsk->waiters;
 		++ pool->waiters;
 		
-		WPUSH(pool, WK_T_WAITEX)
+		WPUSH(pool, WK_T_WAITEX, tpool_wkid())
 		if (-1 != ms)
 			error = OSPX_pthread_cond_timedwait(&pool->cond_comp, &pool->mut, &ms);
 		else
@@ -1850,7 +1862,7 @@ tpool_pending_leq_wait(struct tpool_t *pool,  int n_max_pendings, long ms) {
 		else
 			pool->npendings_ev = n_max_pendings;
 
-		WPUSH(pool, WK_T_PENDING_WAIT)
+		WPUSH(pool, WK_T_PENDING_WAIT, tpool_wkid())
 		if (-1 != ms)
 			error = OSPX_pthread_cond_timedwait(&pool->cond_comp, &pool->mut, &ms);
 		else
@@ -2052,7 +2064,6 @@ tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {
 		if (ntasks_pending > 0 && pool->nthreads_waiters >= XLIST_SIZE(&pool->ths_waitq)) {
 			struct xlink *link;	
 			int nwake = min(ntasks_pending, 3);
-			
 			/* NOTE:
 			 * 		We do not care about which thread will be woke up, we just 
 			 * wake up no more than 3 threads to provide services. so the threads
@@ -2227,8 +2238,7 @@ tpool_schedule(struct tpool_t *pool, struct tpool_thread_t *self) {
 	long to;
 
 	for (;self->run;) {
-		OSPX_pthread_mutex_lock(&pool->mut);
-		
+		OSPX_pthread_mutex_lock(&pool->mut);	
 		/* Get a task to execute */
 		if (!tpool_gettask(pool, self)) {
 			/* Check whether we should exit now before our's waiting for tasks. */

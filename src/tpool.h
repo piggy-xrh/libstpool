@@ -73,13 +73,14 @@ int  tpool_add_routine(struct tpool_t *pool,
 					void *arg, struct xschattr_t *attr);
 int  tpool_remove_pending_task(struct tpool_t *pool, int dispatched_by_pool);
 void tpool_detach_task(struct tpool_t *pool, struct task_t *ptsk); 
+long tpool_wkid();
 int  tpool_task_wait(struct tpool_t *pool,  struct task_t *ptsk, long ms);
 int  tpool_task_wait2(struct tpool_t *pool, struct task_t *entry, int n, long ms);
 int  tpool_task_wait3(struct tpool_t *pool, struct task_t *entry, int *n, long ms);
 int  tpool_task_waitex(struct tpool_t *pool, int (*task_match)(struct tpool_tskstat_t *stat, void *arg), void *arg, long ms); 
 int  tpool_pending_leq_wait(struct tpool_t *pool,  int n_max_pendings, long ms); 
 
-#define WK_T_DISABLE_WAIT 0x01  
+#define WK_T_THROTTLE_WAIT 0x01  
 #define WK_T_WAIT   0x02        
 #define WK_T_WAIT2  0x04        
 #define WK_T_WAIT3  0x08        

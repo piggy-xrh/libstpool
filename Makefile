@@ -15,9 +15,9 @@ VPATH =.:src
 #Thanks for @pengjiasi: 
 #       The GCC option -fPIC should be set at the compiling step.
 
-#CFLAGS  =-Isrc -s -O2 -DNDEBUG -fPIC 
+CFLAGS  =-Isrc -s -O2 -DNDEBUG -fPIC 
 
-CFLAGS  =-Isrc -g -fPIC 
+#CFLAGS  =-Isrc -g -fPIC 
 
 ARFLAGS = -rv
 STRIPFLAGS = -xXg

@@ -52,7 +52,7 @@ int main()
 	printf("%s\n", stpool_status_print(hp, NULL, 0));
 		
 	/* Add tasks */
-	times = 90;//900000;	
+	times = 90000;	
 	arg = (int *)malloc(times * sizeof(int));
 	for (i=0; i<times; i++) {
 		/* It'll take a long time if the program is linked with the debug library */
