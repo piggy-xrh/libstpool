@@ -3,7 +3,7 @@
 
 #ifdef _WIN32
 #include <Windows.h>
-#pragma comment(lib, "../lib/stpool.lib")
+#pragma comment(lib, "stpool.lib")
 #define msleep Sleep
 #define random rand
 #else
@@ -11,6 +11,7 @@
 #endif
 
 static void do_work(int *val) {
+	*val += 150;
 	*val *= 0.2;
 }
 
@@ -33,7 +34,6 @@ int main()
 	int i, c, times;
 	int sum, *arg;
 	HPOOL hp;
-	struct stpool_stat_t state;
 	
 	/* We can set the global env here */
 #ifndef _WIN32

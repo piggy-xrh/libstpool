@@ -217,7 +217,7 @@ struct tpool_thread_t {
 
 	/* Optimize */
 	struct xlink link_free;
-	long   thread_id;
+	OSPX_pthread_t thread_id;
 #ifdef _UNLOCK_PTHREAD_CREATE	
 	XLIST  thq;
 #endif
@@ -335,7 +335,7 @@ struct tpool_t {
 	char *buffer;
 	int  maxthreads, minthreads;
 	XLIST ths, freelst, ths_waitq;
-	long launcher;
+	OSPX_pthread_t launcher;
 	int  nthreads_running, nthreads_dying, nthreads_dying_run;
 	int  nthreads_going_rescheduling, nthreads_waiters;
 	int  ncont_completions, limit_cont_completions;

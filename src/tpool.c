@@ -8,6 +8,7 @@
 
 #include "mpool.h"
 #include "tpool.h"
+#include "ospx_errno.h"
 
 #ifndef min
 /* VS has defined the MARCO in stdlib.h */
@@ -67,8 +68,6 @@ tpool_new_task(struct tpool_t *pool) {
 		OSPX_pthread_mutex_unlock(&pool->mut);
 
 		if (link) {
-			struct mpool_t *mp;
-
 			ptsk = XCOBJEX(link, struct task_t, wait_link);
 			if (TASK_F_MPOOL & ptsk->f_mask) {
 				ptsk->f_vmflags = 0;
@@ -1921,7 +1920,7 @@ tpool_thread_entry(void *arg) {
 
 static int
 tpool_add_threads(struct tpool_t *pool, struct tpool_thread_t *th, int nthreads, long lflags /* reserved */) {
-	int n, res;
+	int n;
 	
 	assert(!lflags);
 	
@@ -2062,7 +2061,6 @@ tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {
 			+ XLIST_SIZE(&pool->ths_waitq) - pool->nthreads_waiters);
 		
 		if (ntasks_pending > 0 && pool->nthreads_waiters >= XLIST_SIZE(&pool->ths_waitq)) {
-			struct xlink *link;	
 			int nwake = min(ntasks_pending, 3);
 			/* NOTE:
 			 * 		We do not care about which thread will be woke up, we just 

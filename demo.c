@@ -4,7 +4,7 @@
 
 #ifdef _WIN32
 #include <Windows.h>
-#pragma comment(lib, "../lib/stpool.lib")
+#pragma comment(lib, "stpool.lib")
 #define msleep Sleep
 #define random rand
 #else

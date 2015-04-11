@@ -7,7 +7,7 @@
 #include "ospx_error.h"
 
 OSPX_pthread_key_t g_ospx_key  = 0;
-uint32_t g_installer = 0;
+int g_installer = 0;
 
 /**************************************OSPX**************************/
 EXPORT
@@ -26,7 +26,7 @@ int OSPX_library_init(long lflags) {
 			return -1;
 		}
 		installer = 1;
-		g_installer = OSPX_pthread_id();
+		g_installer = (int)OSPX_pthread_id();
 	}
 
 #ifdef _WIN32
@@ -49,7 +49,7 @@ int OSPX_library_init(long lflags) {
 				 * the main routine of the APP.
 				 */
 		#ifdef _WIN32
-				if (g_installer == OSPX_pthread_id()) {
+				if (g_installer == (int)OSPX_pthread_id()) {
 					OSPX_pthread_key_delete(g_ospx_key);
 					g_ospx_key = 0;	
 				}
@@ -96,7 +96,7 @@ void OSPX_library_end() {
 			free((void *)tls);
 
 		/* Check whether we are the owner */
-		if (g_installer == OSPX_pthread_id()) {	
+		if (g_installer == (int)OSPX_pthread_id()) {	
 			/* We do the clean job here. */
 			OSPX_pthread_key_delete(g_ospx_key);
 			g_ospx_key = 0;
@@ -162,7 +162,7 @@ OSPX_thread_entry(void *arglst) {
 	void *arg = p->arglst;
 	
 	/* Record the handle */
-	ltls->h = p->h;
+	ltls.h = p->h;
 	free(p);
 	
 	/* Attach the TLS datas */
@@ -306,6 +306,7 @@ int OSPX_pthread_mutex_init(OSPX_pthread_mutex_t *mut, int recursive)  {
 	if (recursive) {
 		if ((errno = pthread_mutexattr_init(&xattr)))
 			return errno;
+		
 		if ((errno = pthread_mutexattr_settype(&xattr, PTHREAD_MUTEX_RECURSIVE))) {
 			pthread_mutexattr_destroy(&xattr);
 			return errno;
@@ -401,7 +402,7 @@ int OSPX_pthread_cond_timedwait(OSPX_pthread_cond_t *cond, OSPX_pthread_mutex_t 
 			waiting = 0;
 			goto out;
 		} else if (res != WAIT_OBJECT_0) {
-			error = (res==WAIT_to) ? ETIMEDOUT : -1;
+			error = (res==WAIT_TIMEOUT) ? ETIMEDOUT : -1;
 			--cond->n_waiting;
 			waiting = 0;
 			goto out;
@@ -475,7 +476,7 @@ int OSPX_pthread_rwlock_init(OSPX_pthread_rwlock_t *rwlock) {
 	int error;
 	
 	memset(rwlock, 0, sizeof(OSPX_pthread_rwlock_t));
-	if ((error = OSPX_pthread_mutex_init(&rwlock->rw_mut)))
+	if ((error = OSPX_pthread_mutex_init(&rwlock->rw_mut, 0)))
 		return error;
 	
 	if ((error = OSPX_pthread_cond_init(&rwlock->rw_condreaders)))

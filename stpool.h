@@ -56,8 +56,8 @@ enum {
 	 */
 	STPOOL_TASK_ERR_REMOVED = 5,				
 		
-	/* The task has been connected with a pool and the task has not been done
-	 * completely.
+	/* The task is requested to be added into a deferent pool, But the task has 
+	 * not been done completely.
 	 *
 	 *  (@stpool_add_routine may return the error code)
 	 */
@@ -567,6 +567,7 @@ EXPORT void stpool_resume(HPOOL hp);
  *		On error, error codes below may be returned, 
  *          STPOOL_ERR_DESTROYING
  *          STPOOL_ERR_NOCREATED
+			STPOOL_ERR_THROTTLE 
  *          STPOOL_TASK_ERR_BUSY
  *
  */
@@ -590,6 +591,7 @@ EXPORT int  stpool_add_task(HPOOL hp, struct sttask_t *ptsk);
  *		On error, error codes below may be returned, 
  *          STPOOL_ERR_DESTROYING
  *          STPOOL_ERR_NOCREATED
+ *			STPOOL_ERR_THROTTLE 
  *          STPOOL_ERR_NOMEM 
  */
 EXPORT int  stpool_add_routine(HPOOL hp, 
@@ -686,7 +688,7 @@ EXPORT int  stpool_mark_task_ex(HPOOL hp,
  *
  * Arguments:
  *    @hp     [in]  the pool handle 
- 
+ *
  *    @ptsk   [in]  the task object 
  *
  * Return:
@@ -701,7 +703,7 @@ EXPORT void stpool_detach_task(HPOOL hp, struct sttask_t *ptsk);
  *
  * Arguments:
  *    @hp     [in]  the pool handle 
- 
+ *
  *    @enable [in]  if enable is 1, the throttle's switcher will be turned 
  *    				on, or the throttle's switcher will be turned off.
  * Return:
@@ -736,7 +738,7 @@ EXPORT long stpool_wkid();
  *    
  * Arguments:
  *    @hp     [in]  the pool handle 
- 
+ *
  *    @ms     [in]  milliseconds that the user wants to wait on the
  *                  throttle's switcher.<@ms = -1 = INFINITE>
  *                    
@@ -782,8 +784,9 @@ EXPORT int  stpool_task_waitex(HPOOL hp, int (*sttask_match)(struct stpool_tskst
 EXPORT int  stpool_pending_leq_wait(HPOOL hp, int n_max_pendings, long ms);
 
 /* @stpool_wakeup
- *		 Wake up the wait functions such as @stpool_throttle_disabled_wait,
- * @stpool_task_wait, @stpool_task_wait2, @stpool_task_wait3 and so on.
+ *		 Wake up the wait functions such as @stpool_throttle_wait,
+ * @stpool_task_wait, @stpool_task_wait2, @stpool_task_wait3 and 
+ * so on.
  * 
  * Arguments:
  *    @hp          [in]  the pool handle 

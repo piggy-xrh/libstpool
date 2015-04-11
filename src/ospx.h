@@ -41,9 +41,9 @@ EXPORT OSPX_pthread_t OSPX_pthread_self();
 
 /* Thread ID */
 #ifndef _WIN32
-#define OSPX_pthread_id() (long)pthread_self()
+#define OSPX_pthread_id() (OSPX_pthread_t)pthread_self()
 #else
-#define OSPX_pthread_id() (long)GetCurrentThreadId()
+#define OSPX_pthread_id() (OSPX_pthread_t)GetCurrentThreadId()
 #endif
 
 #ifndef _WIN32
