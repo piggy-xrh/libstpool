@@ -71,7 +71,7 @@ struct sttask_t {
 	/* @task_run will be called when the task is scheduled by the pool. 
      *  user can do their works in this function.
 	 */
-	int  (*task_run)(struct sttask_t *tsk);	
+	int  (*task_run)(struct sttask_t *ptsk);	
 	
 	/*  	If @task_complete is not NULL, it will be called when one of the conditions 
 	 *  below matches.
@@ -85,7 +85,7 @@ struct sttask_t {
 	 * returned by @task_run. or the the @task_code will be set properly. 
 	      (@see the error codes STPOOL_XXX describled above)
 	 */
-	void (*task_complete)(struct sttask_t *tsk, long vmflags, int task_code);
+	void (*task_complete)(struct sttask_t *ptsk, long vmflags, int task_code);
 
 	/* The argument reserved for task */
 	void *task_arg;
@@ -605,7 +605,7 @@ EXPORT int  stpool_add_routine(HPOOL hp,
  * Arguments:
  *    @hp                 [in]  the pool handle
  *
- *    @tsk                [in]  If tsk NULL, all the tasks existing in the pending queue
+ *    @ptsk               [in]  If ptsk NULL, all the tasks existing in the pending queue
  *                              will be removed.
  *
  *    @dispatched_by_pool [in] If dispatched_by_pool is 1, the pool will be responsible for
@@ -617,7 +617,7 @@ EXPORT int  stpool_add_routine(HPOOL hp,
  * Return:
  *      The number of tasks that have been removed.
  */
-EXPORT int  stpool_remove_pending_task(HPOOL hp, struct sttask_t *tsk, int dispatched_by_pool);
+EXPORT int  stpool_remove_pending_task(HPOOL hp, struct sttask_t *ptsk, int dispatched_by_pool);
 
 /* @stpool_mark_task(ex)
  *	    Walk the status of the tasks existing in the pool. user can mark the task with
@@ -627,14 +627,14 @@ EXPORT int  stpool_remove_pending_task(HPOOL hp, struct sttask_t *tsk, int dispa
  *            If the task is in the pending queue, the task will be removed and the task's
  *         vmflags will be set, But if the task is being scheduled or is being dispatched, 
  *         it has no effect. as you see, its functions are just the same as the @stpool_rem\
- *         ove_pending_task(hp, tsk, 0)'s.
+ *         ove_pending_task(hp, ptsk, 0)'s.
  *	    
  *	    .STMASK_VMARK_REMOVE_BYPOOL
  *			  The diference between STTASK_VMARK_REMOVE is that the completion routines of the 
  *		  tasks marked with STTASK_VMARK_REMOVE will be called by @stpool_mark_task itself, but
  *		  if the tasks are marked with STMASK_VMARK_REMOVE_BYPOOL, the tasks will be removed
  *		  from the pending queue and the pool is responsible for calling their completions.
- *		  its functions are just the same as the @stpool_remove_pending_task(hp, tsk, 1)'s.
+ *		  its functions are just the same as the @stpool_remove_pending_task(hp, ptsk, 1)'s.
  *
  *   NOTE:
  *   	 Only tasks who is in the pending queue can be marked with STTASK_VMARK_REMOVE or
@@ -761,8 +761,8 @@ EXPORT int stpool_throttle_wait(HPOOL hp, long ms);
  * Arguments:
  *    @hp           [in]  the pool handle 
  *
- *    @tsk          [in]  If tsk is not NULL, @stpool_wait will not return
- *                        until all tasks whose address is equal to the tsk
+ *    @ptsk         [in]  If ptsk is not NULL, @stpool_wait will not return
+ *                        until all tasks whose address is equal to the ptsk
  *                        have been done. or @stpool_wait will wait for all
  *                        tasks's quiting.
  *
@@ -777,7 +777,7 @@ EXPORT int stpool_throttle_wait(HPOOL hp, long ms);
  *		On timeout, 1 is returned, 
  *		(If it is woke up by @stpool_wakeup , it returns -1)
  */
-EXPORT int  stpool_task_wait(HPOOL hp, struct sttask_t *tsk, long ms);
+EXPORT int  stpool_task_wait(HPOOL hp, struct sttask_t *ptsk, long ms);
 EXPORT int  stpool_task_wait2(HPOOL hp, struct sttask_t *entry, int n, long ms);
 EXPORT int  stpool_task_wait3(HPOOL hp, struct sttask_t *entry, int *n, long ms);
 EXPORT int  stpool_task_waitex(HPOOL hp, int (*sttask_match)(struct stpool_tskstat_t *stat, void *arg), void *arg, long ms); 

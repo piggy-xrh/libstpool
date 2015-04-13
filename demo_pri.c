@@ -12,21 +12,21 @@
 #endif
 
 int  task_run(struct sttask_t *ptsk)	{
-	printf("Run %s\n", ptsk->task_name);
+	printf("\n\nRun %s\n", ptsk->task_name);
+	msleep(1000);
 	
 	return 0;
 }
 
 void task_complete(struct sttask_t *ptsk, long vmflags, int task_code) {
 	struct schattr_t attr;
-	int code;
+	
 	/* Acquire the scheduling attribute */
 	stpool_task_getschattr(ptsk, &attr);
 	
-	printf("vmflags:%ld task_code:%p [%s-%d]\n\n\n", 
+	printf("vmflags:%ld task_code:%p [%s-%d]\n", 
 		vmflags, (void *)task_code, ptsk->task_name, attr.sche_pri);
 	
-	msleep(1000);
 	
 	/* Reschedule the task if the task has been done successfully */
 	if (STTASK_VMARK_DONE & vmflags) {
@@ -34,6 +34,7 @@ void task_complete(struct sttask_t *ptsk, long vmflags, int task_code) {
 		if (err) {
 			fprintf(stderr, "**ERR: add '%s' (%d)\n",
 				ptsk->task_name, err);
+			return;
 		}
 	}
 }
@@ -63,7 +64,7 @@ int main()
 	
 	getchar();
 	/* Remove all tasks */
-	stpool_remove_pending_task(hp, NULL, 0);
+	stpool_remove_pending_task(hp, NULL, 1);
 
 	/* Turn the throttle on */
 	stpool_throttle_enable(hp, 1);

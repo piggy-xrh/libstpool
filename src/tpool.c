@@ -1469,10 +1469,7 @@ tpool_add_task_l(struct tpool_t *pool, struct task_t *ptsk) {
 		}
 	}
 	
-	if (!pool->paused) {
-		if (pool->npendings == XLIST_SIZE(&pool->dispatch_q) - 1) 
-			pool->ncont_completions = 0;
-		
+	if (!pool->paused) {	
 		if (pool->maxthreads > pool->nthreads_real_pool 
 			/* FIX BUGS. (2015-2-09) 
 		 	 *    The pool should be woke up if all servering threads are
