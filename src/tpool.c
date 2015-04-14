@@ -1595,8 +1595,8 @@ tpool_throttle_wait(struct tpool_t *pool, long ms) {
 		error = pool->throttle_enabled ? 1 : 0;
 	else
 		for (error=0;;) {
-			if (!pool->throttle_enabled || !(POOL_F_CREATED & pool->status)) {
-				error = pool->throttle_enabled ? 2 : 0;
+			if (!pool->throttle_enabled) {
+				error = 0;
 				break;
 			}
 			if (ETIMEDOUT == error)
@@ -1627,12 +1627,7 @@ tpool_task_wait(struct tpool_t *pool, struct task_t *ptsk, long ms) {
 		return 0;
 
 	OSPX_pthread_mutex_lock(&pool->mut);	
-	for (error=0;;) {
-		if (!(POOL_F_CREATED & pool->status)) {
-			error = 2;
-			break;
-		}
-		
+	for (error=0;;) {	
 		if (XLIST_EMPTY(&pool->trace_q) ||
 			(ptsk && !ptsk->f_stat)) {
 			error = 0;
@@ -1701,12 +1696,7 @@ tpool_task_wait_ex(struct tpool_t *pool, long call, struct task_t *entry, int *n
 	*n = 0;
 
 	OSPX_pthread_mutex_lock(&pool->mut);		
-	for (error=0;;) {
-		if (!(POOL_F_CREATED & pool->status)) {
-			error = 2;
-			break;
-		}
-			
+	for (error=0;;) {	
 		if (!ms) 
 			error = ETIMEDOUT;
 
@@ -1774,12 +1764,7 @@ tpool_task_waitex(struct tpool_t *pool, int (*task_match)(struct tpool_tskstat_t
 	struct tpool_tskstat_t stat;
 
 	OSPX_pthread_mutex_lock(&pool->mut);	
-	for (error=0, got=0;;) {
-		if (!(POOL_F_CREATED & pool->status)) {
-			error = 2;
-			break;
-		}
-
+	for (error=0, got=0;;) {	
 		XLIST_FOREACH(&pool->trace_q, &link) {
 			ptsk = POOL_TRACEQ_task(link);
 			ACQUIRE_TASK_STAT(pool, ptsk, &stat);
@@ -1790,6 +1775,7 @@ tpool_task_waitex(struct tpool_t *pool, int (*task_match)(struct tpool_tskstat_t
 				break;
 			}
 		}
+
 		if (!got) {
 			error = 0;
 			break;
@@ -1832,12 +1818,7 @@ tpool_pending_leq_wait(struct tpool_t *pool,  int n_max_pendings, long ms) {
 		n_max_pendings = 0;
 
 	OSPX_pthread_mutex_lock(&pool->mut);	
-	for (error=0;;) {
-		if (!(POOL_F_CREATED & pool->status)) {
-			error = 2;
-			break;
-		}
-		
+	for (error=0;;) {		
 		if (n_max_pendings >= pool->npendings) {
 			error = 0;
 			break;

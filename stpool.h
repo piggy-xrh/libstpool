@@ -57,7 +57,7 @@ enum {
 	STPOOL_TASK_ERR_REMOVED = 5,				
 		
 	/* The task is requested to be added into a deferent pool, But the task has 
-	 * not been done completely.
+	 * not disconnected with the current pool completely.
 	 *
 	 *  (@stpool_add_routine may return the error code)
 	 */
