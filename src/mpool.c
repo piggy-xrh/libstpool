@@ -1,10 +1,11 @@
+#include <assert.h>
 #include "ospx.h"
-#include "xlist.h"
+#include "list.h"
 #include "mpool.h"
 
 struct mpool_blk_t {
-	struct  xlink link;
-	struct  xlink base_link;
+	struct  hlist_node link;
+	struct  hlist_node base_link;
 	uint8_t  slot;
 	uint16_t u16_num;
 	void    *base;
@@ -18,8 +19,9 @@ struct mpool_blk_t {
 };
 
 struct mpool_init_data_t {
-	XLIST mq;
-	XLIST *mbase;
+	struct hlist_head mq;
+	struct hlist_head *mbase;
+	size_t *mqnarray;
 	size_t mbnum;
 	size_t nacquires;
 	uint64_t left;
@@ -32,21 +34,20 @@ struct mpool_obj_ptr_t {
 };
 
 #define PAGE_SIZE (1024 * 4)
-#define MPOOL_blk(qlink)       XCOBJ(qlink, struct mpool_blk_t)
-#define MPOOL_base_blk(blink)  XCOBJEX(blink, struct mpool_blk_t, base_link)
 #define MPOOL_data(mp) ((struct mpool_init_data_t *)mp->init_data)
 
 #define ACQUIRE_LOCK(mp) OSPX_pthread_mutex_lock(&MPOOL_data(mp)->lock)
 #define RELEASE_LOCK(mp) OSPX_pthread_mutex_unlock(&MPOOL_data(mp)->lock)
 int   
 mpool_init(struct mpool_t *mp, size_t objlen) {
-	int i;
+	size_t i;
 	struct mpool_init_data_t *initd;
 
 	assert(objlen > 0);
 	mp->align  = 4 - objlen % 4;
 	mp->objlen = mp->align + objlen;
-	initd = (struct mpool_init_data_t *)calloc(1, sizeof(*initd) + 6 * sizeof(XLIST));
+	initd = (struct mpool_init_data_t *)calloc(1, sizeof(*initd) + 
+		6 * (sizeof(struct hlist_head) + sizeof(size_t)));
 	if (!initd) {
 		fprintf(stderr, "@%s error:Out of memeory.\n",
 			__FUNCTION__);
@@ -61,19 +62,21 @@ mpool_init(struct mpool_t *mp, size_t objlen) {
 	initd->left = 0;
 	initd->nacquires = 0;
 	initd->mbnum = 6;
-	initd->mbase = (XLIST *)(initd + 1);
-	XLIST_INIT(&initd->mq);
+	initd->mbase = (struct hlist_head *)(initd + 1);
+	initd->mqnarray = (size_t *)(initd->mbase + initd->mbnum);
+	INIT_HLIST_HEAD(&initd->mq);
 	for (i=0; i<initd->mbnum; i++) 
-		XLIST_INIT(&initd->mbase[i]);
+		INIT_HLIST_HEAD(&initd->mbase[i]);
 	mp->init_data = (void *)initd;
 	return 0;
 }
 
 static struct mpool_blk_t *
 mpool_new_blk(struct mpool_t *mp, void *buffer, size_t size, mbuffer_free mfree) {
-	int nobjs, mblen, i, elements;
-	struct xlink *link;
-	struct mpool_blk_t *nblk;
+	size_t nobjs, mblen, i, elements;
+	struct hlist_node *pos, *last;
+	struct hlist_head *hlst;
+	struct mpool_blk_t *nblk, *iter;
 	struct mpool_obj_ptr_t *optr;
 	struct mpool_init_data_t *initd = MPOOL_data(mp);
 	
@@ -89,7 +92,7 @@ mpool_new_blk(struct mpool_t *mp, void *buffer, size_t size, mbuffer_free mfree)
 			__FUNCTION__);
 		return NULL;
 	}
-
+	
 	if (!buffer) {
 		/* Reset the size */
 		size   = nobjs * mp->objlen;
@@ -119,11 +122,11 @@ mpool_new_blk(struct mpool_t *mp, void *buffer, size_t size, mbuffer_free mfree)
 	nblk->bitmap = (uint8_t *)(nblk + 1);
 	
 	ACQUIRE_LOCK(mp);
-	elements = XLIST_SIZE(&initd->mbase[0]);
+	elements = initd->mqnarray[0];
 	nblk->slot = 0;
 	for (i=1; i<initd->mbnum; i++){
-		if (elements > XLIST_SIZE(&initd->mbase[i])) {
-			elements = XLIST_SIZE(&initd->mbase[i]);
+		if (elements > initd->mqnarray[i]) {
+			elements = initd->mqnarray[i];
 			nblk->slot = i;
 		}
 	}
@@ -132,19 +135,31 @@ mpool_new_blk(struct mpool_t *mp, void *buffer, size_t size, mbuffer_free mfree)
 		optr->f_slot = nblk->slot;
 		optr->f_resv = 0;
 	}
-	/* Sort the block */
-	XLIST_FOREACH(&initd->mbase[nblk->slot], &link) {
-		if ((size_t)nblk->base < (size_t)MPOOL_base_blk(link)->base)
-			break;
-	}
-	if (!link)
-		XLIST_PUSHBACK(&initd->mbase[nblk->slot], &nblk->base_link);
-	else
-		XLIST_INSERTBEFORE(&initd->mbase[nblk->slot], link, &nblk->base_link);
+	hlst = &initd->mbase[nblk->slot];
 	
-	XLIST_PUSHFRONT(&initd->mq, &nblk->link);
+	/* Insert the block into the slot */
+	if (hlist_empty(hlst))
+		hlist_add_head(&nblk->base_link, hlst);
+	else {	
+		hlist_for_each_entry(iter, pos, hlst, struct mpool_blk_t, base_link) {
+			if (nblk->end > iter->end) {
+				hlist_add_before(&nblk->base_link, &iter->base_link);
+				break;
+			}
+
+			/* Record the last ptr */
+			last = pos;
+		}
+
+		if (!pos) 
+			hlist_add_after(last, &nblk->base_link);
+	}	
+	++ initd->mqnarray[nblk->slot];
+	
+	/* Put the block into the free buffer queue */
+	hlist_add_head(&nblk->link, &initd->mq);
 	initd->left += nblk->left;
-	
+
 	return nblk;
 }
 
@@ -176,14 +191,14 @@ mpool_add_buffer(struct mpool_t *mp, void *buffer, size_t size, mbuffer_free mfr
 static void 
 assert_ptr(struct mpool_t *mp, struct mpool_obj_ptr_t *ptr, int allocated, const char *func, int line) {
 	int assert_num = 0;
-	struct xlink *link = NULL;
+	struct hlist_node *pos;
 	struct mpool_blk_t *blk;
 	struct mpool_init_data_t *initd = MPOOL_data(mp);
 	
 	PASSERT((!ptr->f_resv) && (ptr->f_slot < initd->mbnum));
 	
-	XLIST_FOREACH(&initd->mbase[ptr->f_slot], &link) {
-		blk = MPOOL_base_blk(link);	
+	hlist_for_each_entry(blk, pos, &initd->mbase[ptr->f_slot], 
+			struct mpool_blk_t, base_link) {
 		if (((size_t)blk->base <= (size_t)ptr) &&
 			((size_t)blk->end  >= (size_t)ptr)) {
 			size_t offset = (size_t)ptr - (size_t)blk->base;
@@ -199,7 +214,6 @@ assert_ptr(struct mpool_t *mp, struct mpool_obj_ptr_t *ptr, int allocated, const
 			break;
 		}
 	}
-	PASSERT(link);	
 }
 
 void 
@@ -219,13 +233,9 @@ mpool_new(struct mpool_t *mp) {
 	struct mpool_init_data_t *initd = MPOOL_data(mp);
 
 	ACQUIRE_LOCK(mp);
-	if (!XLIST_EMPTY(&initd->mq)) {
-		struct xlink *link;
+	if (!hlist_empty(&initd->mq)) 
+		blk = hlist_entry(initd->mq.first, struct mpool_blk_t, link);
 	
-		link = XLIST_FRONT(&initd->mq); 
-		assert(MPOOL_blk(link)->left);
-		blk = MPOOL_blk(link);
-	}
 	++ initd->nacquires;
 	
 	/* We try to create a new blok if there are none
@@ -250,10 +260,9 @@ mpool_new(struct mpool_t *mp) {
 	//assert_ptr(mp, ptr, 0, __FUNCTION__, __LINE__);
 	
 	OSPX_bitset(blk->bitmap, blk->freeslot);
-	-- blk->left;
-	-- initd->left;
-	if (!blk->left) 
-		XLIST_REMOVE(&initd->mq, &blk->link);
+	
+	if (!-- blk->left) 
+		hlist_del(&blk->link);
 	else {
 		++ blk->freeslot;
 		
@@ -286,6 +295,7 @@ mpool_new(struct mpool_t *mp) {
 			assert(num <= index);
 		}
 	}		
+	-- initd->left;
 	//assert_ptr(mp, ptr, 1, __FUNCTION__, __LINE__);
 	RELEASE_LOCK(mp);
 	
@@ -297,7 +307,7 @@ mpool_delete(struct mpool_t *mp, void *ptr) {
 	int release = 0;
 	struct mpool_obj_ptr_t *optr = (struct mpool_obj_ptr_t *)((uint8_t *)ptr - mp->align);
 	struct mpool_init_data_t *initd = MPOOL_data(mp);
-	struct xlink *link;
+	struct hlist_node *pos;
 	struct mpool_blk_t *blk;
 	
 	if ((!ptr) || optr->f_resv) {
@@ -307,37 +317,38 @@ mpool_delete(struct mpool_t *mp, void *ptr) {
 	
 	ACQUIRE_LOCK(mp);
 	assert_ptr(mp, optr, 1, __FUNCTION__, __LINE__);
-	XLIST_FOREACH(&initd->mbase[optr->f_slot], &link) {
-		blk = MPOOL_base_blk(link);
+	hlist_for_each_entry(blk, pos, &initd->mbase[optr->f_slot],
+			struct mpool_blk_t, base_link) {
+		/* Verify the address again */
+		if (((size_t)optr > (size_t)blk->end)) {
+			assert(0);
+			break;
+		}
 
-		/* Is the address valid ? */
-		assert(((size_t)optr >= (size_t)blk->base)); 
-		if ((size_t)optr <= (size_t)blk->end) {
-			/* Clear the bit */
+		if ((size_t)optr >= (size_t)blk->base) {
+			/* Set the bitmap */
 			blk->freeslot = ((size_t)optr - (size_t)blk->base) / mp->objlen + 1;
 			OSPX_bitclr(blk->bitmap, blk->freeslot);
+			
 			++ blk->left;
-			++ initd->left;
-
-			assert_ptr(mp, optr, 0, __FUNCTION__, __LINE__);
 			if (1 == blk->left) 
-				XLIST_PUSHFRONT(&initd->mq, &blk->link);
+				hlist_add_head(&blk->link, &initd->mq);
 
 			/* Should we release the block ? */
-			else if ((blk->left == blk->num) && (initd->left >= (blk->left + 5))) {
-				assert_ptr(mp, optr, 0, __FUNCTION__, __LINE__);	
-				
-				XLIST_REMOVE(&initd->mq, &blk->link);
-				XLIST_REMOVE(&initd->mbase[optr->f_slot], &blk->base_link);
+			else if ((blk->left == blk->num) && (initd->left >= (blk->left + 5))) {	
+				hlist_del(&blk->link);
+				hlist_del(&blk->base_link);
 				release = 1;
 				initd->left -= blk->left;
-			} 
+				-- initd->mqnarray[blk->slot];
+			}
+			++ initd->left;
+			assert_ptr(mp, optr, 0, __FUNCTION__, __LINE__);
 			break;
 		}
 	}
 	RELEASE_LOCK(mp);
 	
-	/* Verify the ptr */
 	if (release) {
 		if (blk->mfree)
 			blk->mfree(blk->base);
@@ -347,16 +358,16 @@ mpool_delete(struct mpool_t *mp, void *ptr) {
 
 int
 mpool_blkstat_walk(struct mpool_t *mp, int (*walkstat)(struct mpool_blkstat_t *, void *), void *arg) {
-	int cnt = 0, index = 0;
-	struct xlink *link;
+	size_t cnt = 0, index = 0;
+	struct hlist_node *pos;
+	struct mpool_blk_t *blk;
 	struct mpool_blkstat_t st;
 	struct mpool_init_data_t *initd = MPOOL_data(mp);
 
 	ACQUIRE_LOCK(mp);
 	for (;index<initd->mbnum; index++) {
-		XLIST_FOREACH(&initd->mbase[index], &link) {
-			struct mpool_blk_t *blk = MPOOL_base_blk(link);
-			
+		hlist_for_each_entry(blk, pos, &initd->mbase[index], 
+				struct mpool_blk_t, base_link) {	
 			st.base = blk->base;
 			st.length = blk->length;
 			st.nobjs_resved = blk->left;
@@ -374,9 +385,10 @@ mpool_blkstat_walk(struct mpool_t *mp, int (*walkstat)(struct mpool_blkstat_t *,
 
 struct mpool_stat_t *
 mpool_stat(struct mpool_t *mp, struct mpool_stat_t *stat) {
-	int index = 0;
+	size_t index = 0;
 	static struct mpool_stat_t slstat;
-	struct xlink *link;
+	struct hlist_node *pos;
+	struct mpool_blk_t *blk;
 	struct mpool_init_data_t *initd = MPOOL_data(mp);
 
 	if (!stat)
@@ -390,9 +402,8 @@ mpool_stat(struct mpool_t *mp, struct mpool_stat_t *stat) {
 
 	ACQUIRE_LOCK(mp);
 	for (;index<initd->mbnum; index++) {
-		XLIST_FOREACH(&initd->mbase[index], &link) {
-			struct mpool_blk_t *blk = MPOOL_base_blk(link);
-		
+		hlist_for_each_entry(blk, pos, &initd->mbase[index], 
+				struct mpool_blk_t, base_link) {		
 			stat->nobjs_resved += blk->left;
 			stat->nobjs_allocated  += blk->num - blk->left;
 			stat->mem_hold_all += blk->length;
@@ -438,40 +449,37 @@ mpool_stat_print(struct mpool_t *mp, char *buffer, size_t len) {
 
 void
 mpool_destroy(struct mpool_t *mp, int force) {
-	if (mp) {
-		int release = 0;
-		struct mpool_stat_t st;
-		struct mpool_init_data_t *initd = MPOOL_data(mp);
+	int release = 0;
+	struct hlist_node *pos, *n;
+	struct mpool_blk_t *blk;
+	struct mpool_stat_t st;
+	struct mpool_init_data_t *initd = MPOOL_data(mp);
 
-		mpool_stat(mp, &st);
-		if (st.nobjs_allocated) {
-			fprintf(stderr, "MPOOL is busy now:\n%s\n",
-				mpool_stat_print(mp, NULL, 0));
-			release = force;
-		} else
-			release = 1;
+	assert(mp);	
+	mpool_stat(mp, &st);
+	if (st.nobjs_allocated) {
+		fprintf(stderr, "MPOOL is busy now:\n%s\n",
+			mpool_stat_print(mp, NULL, 0));
+		release = force;
+	} else
+		release = 1;
 
-		if (release) {
-			int index, ele;
+	if (release) {
+		size_t index;
 
-			for (index=0;index<initd->mbnum; index++) {
-				ele = XLIST_SIZE(&initd->mbase[index]);
-				
-				for (;ele; --ele) {
-					struct xlink *link;
-					struct mpool_blk_t *blk;
-					
-					XLIST_POPFRONT(&initd->mbase[index], link);
-					blk = MPOOL_base_blk(link);
-					if (blk->mfree) {
-						blk->mfree(blk->base);
-						free(blk);
-					}
+		for (index=0;index<initd->mbnum; index++) {
+			struct hlist_head *hlst = &initd->mbase[index];
+			
+			hlist_for_each_entry_safe(blk, pos, n, hlst,
+					struct mpool_blk_t, base_link) {	
+				if (blk->mfree) {
+					blk->mfree(blk->base);
+					free(blk);
 				}
 			}
-			OSPX_pthread_mutex_destroy(&initd->lock);
-			free(initd);
 		}
+		OSPX_pthread_mutex_destroy(&initd->lock);
+		free(initd);
 	}
 }
 

@@ -3,7 +3,7 @@
 
 #include <time.h>
 #include "ospx.h"
-#include "xlist.h"
+#include "list.h"
 
 struct tpool_t;
 
@@ -84,12 +84,12 @@ enum {
 	/* Insert our task before the tasks who has the same
 	 * priority exisiting in the pool.
 	 */
-	POLICY_PRI_SORT_INSERTBEFORE = 1,
+	P_SCHE_TOP = 1,
 
     /* Insert our task after the tasks who has the same
 	 * priority exisiting in the pool.
 	 */
-	POLICY_PRI_SORT_INSERTAFTER,
+	P_SCHE_BACK,
 };
 
 /* Priority attribute of the task */
@@ -99,7 +99,7 @@ struct xschattr_t {
 	/* Priority of the task [0~99] */
 	int pri;
 
-	/* Priority policy of the task (POLICY_PRI_XX) */
+	/* Priority policy of the task (P_SCHE_XX) */
 	int pri_policy;
 };
 
@@ -136,8 +136,8 @@ struct task_t {
 	/* The servering thread */
 	struct tpool_thread_t *th;
 
-	/* The waiters number */
-	uint16_t waiters;
+	/* The reference of the task */
+	uint16_t ref;
 
 	/* Whether the task has been detached to the pool */
 	uint16_t detached:1;
@@ -163,8 +163,8 @@ struct task_t {
 #define f_vmflags  uflags0.f_vmflags
 #define f_stat     uflags0.f_stat
 #define f_mask     uflags0.f_mask
-	struct xlink wait_link;
-	struct xlink trace_link;
+	struct list_head wait_link;
+	struct list_head trace_link;
 };
 
 
@@ -216,22 +216,19 @@ struct tpool_thread_t {
 	struct   task_t *current_task;
 
 	/* Optimize */
-	struct xlink link_free;
+	struct list_head link_free;
 	OSPX_pthread_t thread_id;
-#ifdef _UNLOCK_PTHREAD_CREATE	
-	XLIST  thq;
-#endif
+	struct list_head  thq;
 
 	/* The task pool that the thread belongs to */
 	struct tpool_t *pool;
-	struct xlink link;
+	struct list_head link;
 	
 	/* If the thread has gotten a task from the pool,
 	 * the thread will be pushed into the running queue
 	 */
-	struct xlink run_link;	
+	struct list_head run_link;	
 };
-#define THREAD_CRTQ_task(link) XCOBJEX(link, struct tpool_thread_t, link_free)
 
 /* The status of the pool */
 enum {
@@ -281,9 +278,9 @@ struct tpool_tskstat_t {
 
 /* Priority queue */
 struct tpool_priq_t {
-	struct xlink link;
+	struct list_head link;
 	int    index;
-	XLIST  task_q;
+	struct list_head task_q;
 };
 
 /* The definition of the pool object */
@@ -294,13 +291,13 @@ struct tpool_t {
 	
 	/* Waiters' env */
 	int  waiters, suspend_waiters;
-	XLIST wq;
+	struct list_head wq;
 
 	/* Object memory pool */
 	struct mpool_t *mp;
 
 	/* GC env */
-	XLIST  clq, gcq;
+	struct list_head clq, gcq;
 	struct tpool_thread_t *GC;
 	struct task_t sys_GC_task;
 	
@@ -320,8 +317,8 @@ struct tpool_t {
 	
 	/* task env */
 	int  ndispatchings;
-	int64_t npendings;
-	XLIST ready_q, trace_q, dispatch_q;
+	int64_t npendings, n_qtrace, n_qdispatch;
+	struct list_head ready_q, trace_q, dispatch_q;
 	OSPX_pthread_cond_t  cond_comp;
 	
 	/* throttle env */
@@ -334,7 +331,8 @@ struct tpool_t {
 	/* service threads env */
 	char *buffer;
 	int  maxthreads, minthreads;
-	XLIST ths, freelst, ths_waitq;
+	struct list_head ths, freelst, ths_waitq;
+	int  n_qths, n_qths_wait;
 	OSPX_pthread_t launcher;
 	int  nthreads_running, nthreads_dying, nthreads_dying_run;
 	int  nthreads_going_rescheduling, nthreads_waiters;
@@ -343,7 +341,7 @@ struct tpool_t {
 	OSPX_pthread_cond_t cond_ths;
 		
 	/* Statics report */
-	size_t nthreads_peak, ntasks_peak;
+	int64_t nthreads_peak, ntasks_peak;
 
 	/* priority queue */
 	uint16_t pri_q_num, avg_pri;
@@ -355,8 +353,5 @@ struct tpool_t {
 	OSPX_pthread_cond_t  cond;
 	OSPX_pthread_mutex_t mut;
 };
-#define POOL_Q_thread(link)     XCOBJ(link, struct tpool_thread_t)
-#define POOL_TRACEQ_task(link)  XCOBJEX(link, struct task_t, trace_link)
-#define POOL_READYQ_task(link)  XCOBJEX(link, struct task_t, wait_link)
 
 #endif

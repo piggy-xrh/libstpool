@@ -27,23 +27,14 @@ int  task_run(struct sttask_t *ptsk) {
 	 */
 	return 0;
 }
-
+#include <stdint.h>
 int main()
 {
 	time_t now;
 	int i, c, times;
 	int sum, *arg;
 	HPOOL hp;
-	
-	/* We can set the global env here */
-#ifndef _WIN32
-	setenv("LIMIT_THREADS_FREE", "1", 1);
-	setenv("LIMIT_THREADS_CREATE_PER_TIME", "1", 1);
-#else
-	_putenv("LIMIT_THREADS_FREE=1");
-	_putenv("LIMIT_THREADS_CREATE_PER_TIME=1");
-#endif
-
+		
 	/* Creat a task pool */
 	hp = stpool_create(50,  /* max servering threads */
 			           0,   /* 0 servering threads that reserved for waiting for tasks */

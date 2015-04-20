@@ -1,3 +1,5 @@
+#include <assert.h>
+
 #include "mpool.h"
 #include "stpool.h"
 #include "tpool.h"
@@ -8,7 +10,7 @@ static struct mpool_t *gs_mp = NULL;
 
 const char *
 stpool_version() {
-	return "2015/04/10-2.6-libstpool";
+	return "2015/04/10-2.6-libstpool-list";
 }
 
 static void
@@ -31,7 +33,7 @@ stpool_task_init(struct sttask_t *ptsk,
 	memset(nptsk, 0, sizeof(struct task_t));
 	tpool_task_init(nptsk, name, (int (*)(struct task_t *))run, 
 			(void (*)(struct task_t *, long , int))complete, arg);	
-	nptsk->pri_policy = POLICY_PRI_SORT_INSERTAFTER;
+	nptsk->pri_policy = P_SCHE_TOP;
 	nptsk->f_mask |= TASK_F_PUSH;
 }
 
@@ -70,7 +72,7 @@ stpool_task_new(const char *name,
 		
 		if (gs_mp)
 			ptsk->f_mask = TASK_F_MPOOL;
-		ptsk->pri_policy = POLICY_PRI_SORT_INSERTAFTER;
+		ptsk->pri_policy = P_SCHE_BACK;
 		ptsk->f_mask |= TASK_F_PUSH;
 	}
 

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <assert.h>
 
 #if !defined(NDEBUG) && !defined(_WIN32)
 #include <sys/prctl.h>
@@ -54,32 +55,34 @@ static struct tpool_thread_t *th_dummy_null = NULL;
 
 struct task_t *
 tpool_new_task(struct tpool_t *pool) {
-	struct task_t *ptsk;
+	struct task_t *ptsk = NULL;
 
 	/* NOTE: We can create a memory pool to improve our
 	 * 		 perfermence !
 	 */
-	if (!XLIST_EMPTY(&pool->clq)) {
-		struct xlink *link = NULL;
-
+	if (!list_empty(&pool->clq)) {
+		/* Acquire a object from the garbage cache */
 		OSPX_pthread_mutex_lock(&pool->mut);
-		if (!XLIST_EMPTY(&pool->clq)) 
-			XLIST_POPFRONT(&pool->clq, link);	
+		if (!list_empty(&pool->clq)) {
+			ptsk = list_entry(pool->clq.next, struct task_t, wait_link);
+			list_del(&ptsk->wait_link);
+		}
 		OSPX_pthread_mutex_unlock(&pool->mut);
 
-		if (link) {
-			ptsk = XCOBJEX(link, struct task_t, wait_link);
+		if (ptsk) {
 			if (TASK_F_MPOOL & ptsk->f_mask) {
 				ptsk->f_vmflags = 0;
 				ptsk->f_mask = TASK_F_MPOOL;
 			} else
 				ptsk->f_flags = 0;
+			ptsk->pri = 0;
 			ptsk->f_mask |= TASK_F_PUSH;
 			
 			return ptsk;
 		}
 	} 		
 	
+	/* Allocate a object from the memory pool */
 	if (pool->mp) {
 		ptsk = (struct task_t *)mpool_new(pool->mp);
 		memset(ptsk, 0, sizeof(*ptsk));
@@ -89,17 +92,22 @@ tpool_new_task(struct tpool_t *pool) {
 	
 	if (ptsk)
 		ptsk->f_mask |= TASK_F_PUSH;
-
+	
 	return ptsk;
 }
 
-#define tpool_delete_task_l(pool, ptsk)  XLIST_PUSHBACK(&(pool)->clq, &(ptsk)->wait_link)
-#define tpool_delete_tasks_l(pool, tskq) XLIST_MERGE(&(pool)->clq, tskq)
+#define tpool_delete_task_l(pool, ptsk)  list_add_tail(&(ptsk)->wait_link, &(pool)->clq)
+#define tpool_delete_tasks_l(pool, tskq) list_splice(&(pool)->clq, tskq)
 
 void 
 tpool_delete_task(struct tpool_t *pool, struct task_t *ptsk) {
+	/* If there are working threads existing in the pool,
+	 * we just put the task object into the garbage cache,
+	 * and the working threads will do the GC jobs at the
+	 * rest time, Or we free the object directly.
+	 */
 	OSPX_pthread_mutex_lock(&pool->mut);
-	if (XLIST_EMPTY(&pool->ths)) {
+	if (list_empty(&pool->ths)) {
 		OSPX_pthread_mutex_unlock(&pool->mut); 
 		if (ptsk->f_mask & TASK_F_MPOOL) 
 			mpool_delete(pool->mp, ptsk); 
@@ -113,11 +121,10 @@ tpool_delete_task(struct tpool_t *pool, struct task_t *ptsk) {
 
 static long tpool_release_ex(struct tpool_t *pool, int decrease_user, int wait_threads_on_clean);
 static void tpool_add_task_l(struct tpool_t *pool, struct task_t *ptsk);
-static void tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self);
-static int  tpool_add_threads(struct tpool_t *pool, struct tpool_thread_t *th, int nthreads, long lflags); 
+static inline int  tpool_add_threads(struct tpool_t *pool, struct tpool_thread_t *th, int nthreads, long lflags); 
+static inline void tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self);
 static void tpool_schedule(struct tpool_t *pool, struct tpool_thread_t *self);
-static void tpool_thread_status_change(struct tpool_t *pool, struct tpool_thread_t *self, long status, int synchronized);
-static int  tpool_gettask(struct tpool_t *pool, struct tpool_thread_t *self);
+static void tpool_task_complete(struct tpool_t *pool, struct tpool_thread_t *self, struct task_t *ptsk, int task_code); 
 
 static void 
 tpool_setstatus(struct tpool_t *pool, long status, int synchronized) {
@@ -133,19 +140,21 @@ tpool_setstatus(struct tpool_t *pool, long status, int synchronized) {
 #ifndef NDEBUG
 #define INIT_thread_structure(pool, self, release) \
 	do {\
+		(self)->status = THREAD_STAT_INIT;\
+		INIT_LIST_HEAD(&(self)->thq);\
 		(self)->structure_release = release;\
 		(self)->ntasks_done = 0;\
 		(self)->ncont_rest_counters = 0;\
-		(self)->status = THREAD_STAT_INIT;\
 		(self)->pool = pool;\
 		(self)->run = 1;\
 	} while (0)
 #else
 #define INIT_thread_structure(pool, self, release) \
 	do {\
+		(self)->status = THREAD_STAT_INIT;\
+		INIT_LIST_HEAD(&(self)->thq);\
 		(self)->structure_release = release;\
 		(self)->ncont_rest_counters = 0;\
-		(self)->status = THREAD_STAT_INIT;\
 		(self)->pool = pool;\
 		(self)->run = 1;\
 	} while (0)
@@ -153,13 +162,12 @@ tpool_setstatus(struct tpool_t *pool, long status, int synchronized) {
 
 static int
 tpool_GC_run(struct task_t *ptsk) {
-	struct xlink  *link;
 	struct task_t *obj;
 	struct tpool_t *pool = ptsk->task_arg;
 	
-	while (!XLIST_EMPTY(&pool->gcq)) {
-		XLIST_POPFRONT(&pool->gcq, link);
-		obj = XCOBJEX(link, struct task_t, wait_link);
+	while (!list_empty(&pool->gcq)) {
+		obj = list_entry(pool->gcq.next, struct task_t, wait_link);
+		list_del(&obj->wait_link);
 		
 		if (obj->f_mask & TASK_F_MPOOL)
 			mpool_delete(pool->mp, obj);
@@ -184,7 +192,7 @@ tpool_task_setschattr(struct task_t *ptsk, struct xschattr_t *attr) {
 	if (!attr->permanent) 
 		ptsk->f_mask |= TASK_F_PRI_ONCE;	
 
-	if (!attr->pri_policy || (!attr->pri && POLICY_PRI_SORT_INSERTAFTER == attr->pri_policy)) {
+	if (!attr->pri_policy || (!attr->pri && P_SCHE_BACK == attr->pri_policy)) {
 		ptsk->f_mask |= TASK_F_PUSH;
 		ptsk->f_mask &= ~TASK_F_PRI;
 		ptsk->pri = 0;
@@ -243,27 +251,27 @@ tpool_create(struct tpool_t  *pool, int q_pri, int maxthreads, int minthreads, i
 	 */
 	mem   = 1024 * 8 - 200; 
 	index = mem / sizeof(struct tpool_thread_t);
-	XLIST_INIT(&pool->freelst);
+	INIT_LIST_HEAD(&pool->freelst);
 	ths = (struct tpool_thread_t *)calloc(index * sizeof(struct tpool_thread_t), 1);
 	if (ths) {
 		for (--index;index>=0; --index) {
 			INIT_thread_structure(pool, &ths[index], 0);
-			XLIST_PUSHBACK(&pool->freelst, &ths[index].link_free);
+			list_add(&ths[index].link_free, &pool->freelst);
 		}
 		pool->buffer = (char *)ths;
 	}
 
 	/* Initialize the queue */
-	XLIST_INIT(&pool->wq);
-	XLIST_INIT(&pool->ths);
-	XLIST_INIT(&pool->ths_waitq);
-	XLIST_INIT(&pool->ready_q);
-	XLIST_INIT(&pool->trace_q);
-	XLIST_INIT(&pool->dispatch_q);
+	INIT_LIST_HEAD(&pool->wq);
+	INIT_LIST_HEAD(&pool->ths);
+	INIT_LIST_HEAD(&pool->ths_waitq);
+	INIT_LIST_HEAD(&pool->ready_q);
+	INIT_LIST_HEAD(&pool->trace_q);
+	INIT_LIST_HEAD(&pool->dispatch_q);
 	
 	/* Initialize the GC env */
-	XLIST_INIT(&pool->clq);
-	XLIST_INIT(&pool->gcq);
+	INIT_LIST_HEAD(&pool->clq);
+	INIT_LIST_HEAD(&pool->gcq);
 	tpool_task_init(&pool->sys_GC_task, "GC", tpool_GC_run, NULL, pool);
 	
 	error = POOL_ERR_ERRNO;
@@ -300,7 +308,7 @@ tpool_create(struct tpool_t  *pool, int q_pri, int maxthreads, int minthreads, i
 	}
 
 	for (index=0; index<pool->pri_q_num; index++) {
-		XLIST_INIT(&pool->pri_q[index].task_q);
+		INIT_LIST_HEAD(&pool->pri_q[index].task_q);
 		pool->pri_q[index].index = index;
 	}
 	pool->avg_pri = 100 / pool->pri_q_num;
@@ -404,22 +412,23 @@ tpool_load_env(struct tpool_t *pool) {
 
 static void 
 tpool_free(struct tpool_t *pool) {
-	struct xlink *link;
 	struct task_t *ptsk;
 
-	assert(XLIST_EMPTY(&pool->ths) &&
-	       XLIST_EMPTY(&pool->trace_q) &&
+	assert(list_empty(&pool->ths) &&
+	       list_empty(&pool->trace_q) &&
 		   !pool->nthreads_running &&
-		   (!pool->nthreads_real_sleeping) &&
-		   (!pool->npendings) &&
-		   (!pool->ndispatchings)); 	
+		   !pool->nthreads_real_sleeping &&
+		   !pool->npendings && 
+		   !pool->ndispatchings &&
+		   !pool->n_qtrace && !pool->n_qdispatch); 	
+	
 	/* Free the priority queue */
 	free(pool->pri_q);
 	
 	/* Do the gargabe collection */
-	while (!XLIST_EMPTY(&pool->clq)) {
-		XLIST_POPFRONT(&pool->clq, link);
-		ptsk = XCOBJEX(link, struct task_t, wait_link);
+	while (!list_empty(&pool->clq)) {
+		ptsk = list_entry(pool->clq.next, struct task_t, wait_link);
+		list_del(&ptsk->wait_link);
 		
 		if (ptsk->f_mask & TASK_F_MPOOL)
 			mpool_delete(pool->mp, ptsk);
@@ -457,7 +466,7 @@ tpool_release_ex(struct tpool_t *pool, int decrease_user, int wait_threads_on_cl
 	tpool_release_l(pool, decrease_user, &user_ref);
 	if (decrease_user) {
 		if (0 == user_ref) {
-			struct xlink *link;
+			struct task_t *ptsk;
 		#ifndef NDEBUG
 			{
 				time_t now = time(NULL);
@@ -472,26 +481,25 @@ tpool_release_ex(struct tpool_t *pool, int decrease_user, int wait_threads_on_cl
 			tpool_setstatus(pool, POOL_F_DESTROYING, 1);		
 			
 			/* Notify all tasks that the pool is being destroyed now */
-			XLIST_FOREACH(&pool->trace_q, &link) {
-				POOL_TRACEQ_task(link)->f_vmflags |= TASK_VMARK_POOL_DESTROYING;
+			list_for_each_entry(ptsk, &pool->trace_q, struct task_t, trace_link) {	
+				ptsk->f_vmflags |= TASK_VMARK_POOL_DESTROYING;
 			}
 				
 			/* Are we responsible for cleaning the resources ? */
-			if (XLIST_EMPTY(&pool->ths)) {
+			if (list_empty(&pool->ths)) {
 				/* @tpool_resume can not work if the pool is being destroyed. 
                  * (see @tpool_resume for more details)
 				 */
-				if (!XLIST_EMPTY(&pool->ready_q)) {
+				if (!list_empty(&pool->ready_q)) {
 					assert(pool->paused);
 					
 					/* We create service threads to dispatch the task in the 
 					 * background if there are one more tasks existing in the 
-					 * pool.
-					 */
+					 * pool. */
 					OSPX_pthread_mutex_unlock(&pool->mut);
 					tpool_remove_pending_task(pool, 1);
 					OSPX_pthread_mutex_lock(&pool->mut);
-					clean = XLIST_EMPTY(&pool->ths);
+					clean = list_empty(&pool->ths);
 				} else
 					clean = 1;
 				if (clean)
@@ -502,12 +510,11 @@ tpool_release_ex(struct tpool_t *pool, int decrease_user, int wait_threads_on_cl
 			OSPX_pthread_cond_broadcast(&pool->cond);
 			if (wait_threads_on_clean) {
 				/* Tell the pool that we are responsible for 
-				 * releasing the resources.
-				 */
+				 * releasing the resources. */
 				clean = 1;
 				assert(!pool->release_cleaning);
 				pool->release_cleaning = 1;
-				for (;!XLIST_EMPTY(&pool->ths);) {
+				for (;!list_empty(&pool->ths);) {
 					OSPX_pthread_cond_broadcast(&pool->cond);
 					OSPX_pthread_cond_wait(&pool->cond_ths, &pool->mut);
 				}
@@ -521,11 +528,11 @@ tpool_release_ex(struct tpool_t *pool, int decrease_user, int wait_threads_on_cl
 		/* We delete the pool object if its reference is zero */
 		assert((0 == user_ref) && (decrease_user || pool->ref == 0));
 		
-		assert(XLIST_EMPTY(&pool->ths)); 	
+		assert(list_empty(&pool->ths)); 	
 		tpool_setstatus(pool, POOL_F_DESTROYED, 0);		
 		
 		/* DEBUG check */
-		assert(XLIST_EMPTY(&pool->trace_q));
+		assert(list_empty(&pool->trace_q));
 					
 		/* Now we can free the pool env safely */
 #ifndef NDEBUG
@@ -588,17 +595,17 @@ tpool_getstat(struct tpool_t *pool, struct tpool_stat_t *stat) {
 	stat->suspended = pool->paused;
 	stat->maxthreads = pool->maxthreads;
 	stat->minthreads = pool->minthreads;
-	stat->curthreads = XLIST_SIZE(&pool->ths);
+	stat->curthreads = pool->n_qths;
 	stat->curthreads_active = pool->nthreads_running;
 	stat->curthreads_dying  = pool->nthreads_dying;
 	stat->acttimeo = pool->acttimeo;
-	stat->threads_peak = pool->nthreads_peak;
-	stat->tasks_peak = pool->ntasks_peak;
+	stat->threads_peak = (size_t)pool->nthreads_peak;
+	stat->tasks_peak = (size_t)pool->ntasks_peak;
 	stat->tasks_added = pool->ntasks_added;
 	stat->tasks_done  = pool->ntasks_done;
 	stat->tasks_dispatched = pool->ntasks_dispatched;
-	stat->cur_tasks = XLIST_SIZE(&pool->trace_q);
-	stat->cur_tasks_pending = pool->npendings - XLIST_SIZE(&pool->dispatch_q);   
+	stat->cur_tasks = (size_t)pool->n_qtrace;
+	stat->cur_tasks_pending = (size_t)(pool->npendings - pool->n_qdispatch);
 	stat->cur_tasks_scheduling = pool->nthreads_running;
 	stat->cur_tasks_removing = pool->ndispatchings;
 	OSPX_pthread_mutex_unlock(&pool->mut);	
@@ -735,7 +742,7 @@ tpool_adjust_abs_l(struct tpool_t *pool, int maxthreads, int minthreads) {
 		tpool_add_threads(pool, NULL, nthreads, 0);
 
 	else if (nthreads < 0) {
-		struct xlink *link;
+		struct tpool_thread_t *th;
 		int runthreads_dec = 0, waitthreads_dec = 0;
 		
 		/* Record the counter of threads who is should
@@ -748,8 +755,7 @@ tpool_adjust_abs_l(struct tpool_t *pool, int maxthreads, int minthreads) {
 		runthreads_dec = nthreads;
 		
 		/* Decrease the service threads */
-		XLIST_FOREACH(&pool->ths, &link) {
-			struct tpool_thread_t *th = POOL_Q_thread(link);
+		list_for_each_entry(th, &pool->ths, struct tpool_thread_t, link) {
 			long status = th->status & ~THREAD_STAT_INNER;
 
 			if (THREAD_STAT_RM & th->status)
@@ -766,7 +772,7 @@ tpool_adjust_abs_l(struct tpool_t *pool, int maxthreads, int minthreads) {
 						-- pool->nthreads_real_sleeping;
 					}
 					++ pool->nthreads_dying;
-					-- waitthreads_dec;;
+					-- waitthreads_dec;
 					-- pool->nthreads_real_pool;
 					continue;
 				}
@@ -786,11 +792,12 @@ tpool_adjust_abs_l(struct tpool_t *pool, int maxthreads, int minthreads) {
 
 		/* Wake up all sleeping threads */
 		OSPX_pthread_cond_broadcast(&pool->cond);	
+		pool->nthreads_waiters = 0;
 	}
 
 	/* Reset the statics report */
 	pool->nthreads_peak = pool->nthreads_real_pool;
-	pool->ntasks_peak   = pool->npendings;
+	pool->ntasks_peak   = (int)pool->npendings;
 }
 
 
@@ -837,7 +844,7 @@ tpool_flush(struct tpool_t *pool) {
 	OSPX_pthread_mutex_lock(&pool->mut);
 	exitthreads = pool->nthreads_real_pool - pool->minthreads;
 	if (exitthreads > 0 && pool->nthreads_real_sleeping > 0) {
-		struct xlink *link;
+		struct tpool_thread_t *th;
 
 		if (exitthreads <= pool->nthreads_real_sleeping) 
 			exitthreads_free = 0;
@@ -860,8 +867,7 @@ tpool_flush(struct tpool_t *pool) {
 		assert(exitthreads >= 0 && exitthreads_free >= 0);
 
 		/* Decrease the service threads */
-		XLIST_FOREACH(&pool->ths, &link) {
-			struct tpool_thread_t *th = POOL_Q_thread(link);
+		list_for_each_entry(th, &pool->ths, struct tpool_thread_t, link) {
 			long status = th->status & ~THREAD_STAT_INNER;
 
 			if (THREAD_STAT_RM & th->status)
@@ -913,9 +919,9 @@ tpool_adjust_wait(struct tpool_t *pool) {
 #define TRY_wakeup_waiters(pool, ptsk) \
 	do {\
 	 	if (pool->waiters) {\
-			if (ptsk->waiters) \
+			if (ptsk->ref) \
 				OSPX_pthread_cond_broadcast(&pool->cond_comp);\
-			else if (XLIST_EMPTY(&pool->trace_q) ||\
+			else if (list_empty(&pool->trace_q) ||\
 				(pool->suspend_waiters && !pool->nthreads_running && !pool->ndispatchings)) {\
 				OSPX_pthread_cond_broadcast(&pool->cond_comp);\
 			}\
@@ -923,16 +929,13 @@ tpool_adjust_wait(struct tpool_t *pool) {
 	} while (0)
 
 static void
-tpool_task_complete_nocallback_l(struct tpool_t *pool, XLIST *rmq) {
-	struct xlink *link;
+tpool_task_complete_nocallback_l(struct tpool_t *pool, struct list_head *rmq) {
 	struct task_t *ptsk;
-	
-	assert((pool->ndispatchings >= XLIST_SIZE(rmq)) &&
-		   (pool->ndispatchings <= XLIST_SIZE(&pool->trace_q)));
-	
-	while (!XLIST_EMPTY(rmq)) {
-		XLIST_POPFRONT(rmq, link);
-		ptsk = POOL_READYQ_task(link);
+		
+	while (!list_empty(rmq)) {
+		ptsk = list_entry(rmq->next, struct task_t, wait_link);
+		list_del(rmq->next);
+
 		-- pool->ndispatchings;
 		
 		if (TASK_VMARK_REMOVE_BYPOOL & ptsk->f_vmflags)
@@ -941,11 +944,13 @@ tpool_task_complete_nocallback_l(struct tpool_t *pool, XLIST *rmq) {
 		if (ptsk->do_again)
 			tpool_add_task_l(pool, ptsk);
 		else {
-			XLIST_REMOVE(&pool->trace_q, &ptsk->trace_link);
+			list_del(&ptsk->trace_link);
+			-- pool->n_qtrace;
+
 			ptsk->f_stat = 0;
 			TRY_wakeup_waiters(pool, ptsk);
 
-			if (ptsk->f_mask & TASK_F_ONCE)
+			if (!ptsk->ref && (ptsk->f_mask & TASK_F_ONCE))
 				tpool_delete_task_l(pool, ptsk);
 		}
 	}
@@ -977,7 +982,7 @@ tpool_detach_task(struct tpool_t *pool, struct task_t *ptsk) {
 		*ptsk->pdetached = 1;
 	
 	/* Remove the trace record */
-	XLIST_REMOVE(&pool->trace_q, &ptsk->trace_link);	
+	list_del(&ptsk->trace_link);	
 	
 	/* We decrease the @ndispatchings if the task has been marked with
 	 * TASK_VMARK_REMOVE 
@@ -995,109 +1000,26 @@ tpool_detach_task(struct tpool_t *pool, struct task_t *ptsk) {
 	OSPX_pthread_mutex_unlock(&pool->mut);
 }
 
-static void
-tpool_task_complete(struct tpool_t *pool, struct tpool_thread_t *self, struct task_t *ptsk, int task_code) {	
-	assert(self || ptsk->task_complete);
-
-	/* Call the complete routine to dispatch the result */
-	if (self) {
-		if (self->task_complete) {
-			long vmflags = (TASK_TYPE_DISPATCHED & self->task_type) ?
-				TASK_VMARK_REMOVE_BYPOOL : TASK_VMARK_DONE;
-
-			if (!(POOL_F_CREATED & pool->status))
-				vmflags |= TASK_VMARK_POOL_DESTROYING;
-
-			self->task_complete(ptsk, vmflags, task_code);
-		}
-		
-		if (self->detached) {
-			self->detached = 0;	
-			tpool_thread_setstatus(self, THREAD_STAT_COMPLETE);
-			return;
-		}
-	} else {
-		uint8_t detached = 0;
-		
-		/* Set the variable address for the task */
-		ptsk->pdetached = &detached;
-		ptsk->task_complete(ptsk, ptsk->f_vmflags, task_code);
-	
-		/* We do nothing here if the task has been detached */
-		if (detached)
-			return;	
-	} 
-
-	OSPX_pthread_mutex_lock(&pool->mut);	
-	/* We decrease the @ndispatchings if the task has been marked with
-	 * TASK_VMARK_REMOVE 
-	 */
-	if (TASK_VMARK_REMOVE & ptsk->f_vmflags) {
-		assert(pool->ndispatchings > 0);
-		-- pool->ndispatchings;		
-	} 	
-	assert(!((TASK_VMARK_REMOVE & ptsk->f_vmflags) &&
-		   (TASK_VMARK_DO_AGAIN & ptsk->f_vmflags)));
-	
-	/* We deliver the task into the ready queue if
-	 * the user wants to reschedule it again
-	 */
-	if ((TASK_VMARK_DO_AGAIN & ptsk->f_vmflags) || ptsk->do_again) {				
-		/* Remove the trace record */
-		if (self && !(THREAD_STAT_RM & self->status)) {
-			/* @tpool_add_task_l may create threads to provide service,
-			 * we increase the rescheduling tasks counter before the task's
-			 * being delived to the task queue to make sure that the pool
-			 * can compute the service threads number accurately.
-			 */
-			++ pool->nthreads_going_rescheduling;
-			tpool_add_task_l(pool, ptsk);	
-			
-			/* We decrease the rescheduling tasks counter if the task
-			 * has been added into the task queue.
-			 */
-			-- pool->nthreads_going_rescheduling;
-		} else
-			tpool_add_task_l(pool, ptsk);	
-		
-	} else {
-		/* Reset the status of the task */
-		ptsk->f_stat = 0;
-		XLIST_REMOVE(&pool->trace_q, &ptsk->trace_link);	
-
-		/* We triggle a event for @tpool_task_wait(pool, NULL, -1), @tpool_suspend(pool, 1)*/
-		TRY_wakeup_waiters(pool, ptsk);
-		if (ptsk->f_mask & TASK_F_ONCE)
-			tpool_delete_task_l(pool, ptsk);
-	}
-
-	if (self) 
-		tpool_thread_setstatus_l(self, THREAD_STAT_COMPLETE);	
-	OSPX_pthread_mutex_unlock(&pool->mut);			
-}
 
 void
-tpool_rmq_dispatch(struct tpool_t *pool, XLIST *rmq, XLIST *no_callback_q, int code) {
-	int ele;
-	struct xlink *link;
-	
-	/* We dispatch the tasks who has none complete routine firstly */
-	if (no_callback_q && !XLIST_EMPTY(no_callback_q)) {
+tpool_rmq_dispatch(struct tpool_t *pool, struct list_head *rmq, struct list_head *no_callback_q, int code) {	
+	struct task_t *ptsk, *n;
+
+	/* We dispatch the tasks who has no completion routine firstly */
+	if (no_callback_q && !list_empty(no_callback_q)) {
 		OSPX_pthread_mutex_lock(&pool->mut);	
 		tpool_task_complete_nocallback_l(pool, no_callback_q);
 		OSPX_pthread_mutex_unlock(&pool->mut);	
 	} 
 
-	ele = XLIST_SIZE(rmq);
-	for (;ele; --ele) {
-		XLIST_POPFRONT(rmq, link); 
-		tpool_task_complete(pool, NULL, POOL_READYQ_task(link), code);
+	list_for_each_entry_safe(ptsk, n, rmq, struct task_t, wait_link) {
+		tpool_task_complete(pool, NULL, ptsk, code);
 	}
 }
 
 long
 tpool_mark_task(struct tpool_t *pool, struct task_t *ptsk, long lflags) {	
-	int do_complete = 0;
+	int q, do_complete = 0;
 	struct tpool_tskstat_t stat;
 
 	if (!ptsk || !ptsk->f_stat)
@@ -1105,37 +1027,46 @@ tpool_mark_task(struct tpool_t *pool, struct task_t *ptsk, long lflags) {
 	
 	/* Set the vmflags properly */
 	lflags &= TASK_VMARK_REMOVE;
-	
+	q = ptsk->pri_q;
+
 	OSPX_pthread_mutex_lock(&pool->mut);
 	ACQUIRE_TASK_STAT(pool, ptsk, &stat);
 	
 	/* Check whether the task should be removed */
-	if (!stat.stat)
-		lflags = 0;
-	else if (TASK_VMARK_REMOVE & lflags) {
+	if (!stat.stat) {
+		OSPX_pthread_mutex_unlock(&pool->mut);
+		return 0;
+	}
+	
+	if (TASK_VMARK_REMOVE & lflags) {
 		if ((TASK_STAT_WAIT|TASK_STAT_SWAPED|TASK_STAT_WAIT_PENDING) & stat.stat) {
+			
+			/* Remove the @DO_AGAIN flag */
 			if (TASK_VMARK_DO_AGAIN & ptsk->f_vmflags) 
 				ptsk->f_vmflags &= ~TASK_VMARK_DO_AGAIN;	
+			
 			else if (ptsk->do_again)
 				ptsk->do_again = 0;
+			
 			else {
-				assert(ptsk->pri_q >= 0 && ptsk->pri_q < pool->pri_q_num);
-				XLIST_REMOVE(&pool->pri_q[ptsk->pri_q].task_q, &ptsk->wait_link);
-				if (XLIST_EMPTY(&pool->pri_q[ptsk->pri_q].task_q))
-					XLIST_REMOVE(&pool->ready_q, &pool->pri_q[ptsk->pri_q].link);	
+				assert(q >= 0 && q < pool->pri_q_num);
+				list_del(&ptsk->wait_link);
+				if (list_empty(&pool->pri_q[q].task_q))
+					list_del(&pool->pri_q[q].link);	
 
 				if (lflags & TASK_VMARK_REMOVE_DIRECTLY) 
 					ptsk->f_vmflags |= TASK_VMARK_REMOVE_DIRECTLY;
 				else 
 					ptsk->f_vmflags |= TASK_VMARK_REMOVE_BYPOOL;
-
-				/* Give a notification to @tpool_free_wait */
-				if (pool->npendings_ev >= --pool->npendings)
-					OSPX_pthread_cond_broadcast(&pool->cond_ev);
+				
+				/* Decrease the number of pending tasks */
+				-- pool->npendings;
 				
 				if (!ptsk->task_complete) {	
-					-- pool->ndispatchings;
-					XLIST_REMOVE(&pool->trace_q, &ptsk->trace_link);
+					/* We just remove the task directly if it has no
+				 	 * completion routine */
+					list_del(&ptsk->trace_link);
+					-- pool->n_qtrace;
 		
 					if (TASK_VMARK_REMOVE_BYPOOL & ptsk->f_vmflags)
 						++ pool->ntasks_dispatched;
@@ -1143,26 +1074,35 @@ tpool_mark_task(struct tpool_t *pool, struct task_t *ptsk, long lflags) {
 					ptsk->f_stat = 0;
 					TRY_wakeup_waiters(pool, ptsk);
 
-					if (ptsk->f_mask & TASK_F_ONCE)
+					if ((ptsk->f_mask & TASK_F_ONCE) && !ptsk->ref)
 						tpool_delete_task_l(pool, ptsk);
 
 				} else if (lflags & TASK_VMARK_REMOVE_BYPOOL) {
-					/* Wake up threads to schedule the callback */
 					++ pool->ndispatchings;
+					
+					/* Wake up threads to schedule the callback */
 					ptsk->f_stat = TASK_STAT_DISPATCHING;
-					XLIST_PUSHBACK(&pool->dispatch_q, &ptsk->wait_link);
+					list_add_tail(&ptsk->wait_link, &pool->dispatch_q);
+					++ pool->n_qdispatch;
+					++ pool->npendings;
 					tpool_increase_threads(pool, NULL);
+
 				} else {
 					do_complete = 1;
 					++ pool->ndispatchings;
 					ptsk->f_stat = TASK_STAT_DISPATCHING;
 				}
+				
+				/* Try to give a notification to @tpool_free_wait */
+				if (pool->npendings_ev >= pool->npendings)
+					OSPX_pthread_cond_broadcast(&pool->cond_ev);
 			}
 		}
-		lflags = ptsk->f_vmflags;
 	}	
+	lflags = ptsk->f_vmflags;
 	OSPX_pthread_mutex_unlock(&pool->mut);
-
+	
+	/* Call the completion routine */
 	if (do_complete) 
 		tpool_task_complete(pool, NULL, ptsk, POOL_TASK_ERR_REMOVED);
 	
@@ -1174,19 +1114,16 @@ tpool_mark_task_ex(struct tpool_t *pool,
 			long (*tskstat_walk)(struct tpool_tskstat_t *, void *),
 			void *arg) {	
 	long vmflags;
-	int  effected = 0, removed = 0;
-	XLIST rmq, no_callback_q, pool_q, *q;
-	struct xlink *link;
-	struct task_t *ptsk;
+	int  effected = 0, removed = 0, n_qdispatch = 0;
+	struct list_head rmq, no_callback_q, pool_q, *q;
+	struct task_t *ptsk, *n;
 	struct tpool_tskstat_t stat;
 
-	XLIST_INIT(&rmq);
-	XLIST_INIT(&no_callback_q);
-	XLIST_INIT(&pool_q);
+	INIT_LIST_HEAD(&rmq);
+	INIT_LIST_HEAD(&no_callback_q);
+	INIT_LIST_HEAD(&pool_q);
 	OSPX_pthread_mutex_lock(&pool->mut);
-	XLIST_FOREACH(&pool->trace_q, &link) {
-		ptsk = POOL_TRACEQ_task(link);
-
+	list_for_each_entry_safe(ptsk, n, &pool->trace_q, struct task_t, trace_link) {
 		ACQUIRE_TASK_STAT(pool, ptsk, &stat);
 		vmflags = tskstat_walk(&stat, arg);
 		if (-1 == vmflags)
@@ -1222,36 +1159,41 @@ tpool_mark_task_ex(struct tpool_t *pool,
 		ptsk->f_stat = TASK_STAT_DISPATCHING;
 				
 		assert(ptsk->pri_q >= 0 && ptsk->pri_q < pool->pri_q_num);
-		XLIST_REMOVE(&pool->pri_q[ptsk->pri_q].task_q, &ptsk->wait_link);
-		if (XLIST_EMPTY(&pool->pri_q[ptsk->pri_q].task_q))
-			XLIST_REMOVE(&pool->ready_q, &pool->pri_q[ptsk->pri_q].link);
-		
-		if (ptsk->task_complete) 
-			XLIST_PUSHBACK(q, &ptsk->wait_link);	
-		else
-			XLIST_PUSHBACK(&no_callback_q, &ptsk->wait_link);
+		/* Remove the task from the pending queue */
+		list_del(&ptsk->wait_link);
+		if (list_empty(&pool->pri_q[ptsk->pri_q].task_q))
+			list_del(&pool->pri_q[ptsk->pri_q].link);
 		++ removed;
+		
+		if (ptsk->task_complete) {
+			list_add_tail(&ptsk->wait_link, q);
+			if (q == &pool_q)
+				++ n_qdispatch;
+		} else
+			list_add_tail(&ptsk->wait_link, &no_callback_q);
 	}	
 	
-	assert((pool->npendings >= removed) &&
-		   (removed == (XLIST_SIZE(&rmq) + XLIST_SIZE(&no_callback_q) +
-		                XLIST_SIZE(&pool_q))));
+	assert(pool->npendings >= removed); 
 	pool->ndispatchings += removed;	
 	pool->npendings -= removed;
 		
-	assert(pool->ndispatchings <= XLIST_SIZE(&pool->trace_q));
-	if (!XLIST_EMPTY(&pool_q)) {
+	assert(pool->ndispatchings <= pool->n_qtrace);
+	if (!list_empty(&pool_q)) {
+		/* Move the tasks into the dispatching queue */
+		pool->npendings += n_qdispatch;
+		list_splice(&pool_q, &pool->dispatch_q);
+		pool->n_qdispatch += n_qdispatch;
+		
 		/* Wake up threads to schedule the callback */
-		pool->npendings += XLIST_SIZE(&pool_q);
-		XLIST_MERGE(&pool->dispatch_q, &pool_q);
 		tpool_increase_threads(pool, NULL);
 	}
 		
-	if (!XLIST_EMPTY(&no_callback_q)) 
+	if (!list_empty(&no_callback_q)) 
 		tpool_task_complete_nocallback_l(pool, &no_callback_q);	
+	assert(pool->npendings >= pool->n_qdispatch);
 	OSPX_pthread_mutex_unlock(&pool->mut);
 		
-	if (!XLIST_EMPTY(&rmq))
+	if (!list_empty(&rmq))
 		tpool_rmq_dispatch(pool, &rmq, NULL, POOL_TASK_ERR_REMOVED);	
 	
 	return effected;
@@ -1276,7 +1218,7 @@ tpool_suspend(struct tpool_t *pool, int wait) {
 	OSPX_pthread_mutex_lock(&pool->mut);
 #ifndef NDEBUG	
 	fprintf(stderr, "Suspend pool. <ntasks_pending:"PRI64"d ntasks_running:%d ntasks_removing:%d> @threads_in_pool:%d>\n", 
-			pool->npendings, pool->nthreads_running, pool->ndispatchings, XLIST_SIZE(&pool->ths));
+			pool->npendings, pool->nthreads_running, pool->ndispatchings, pool->n_qths);
 #endif	
 	/* Mark the pool paused */
 	pool->paused = 1;	
@@ -1295,15 +1237,15 @@ tpool_resume(struct tpool_t *pool) {
 	OSPX_pthread_mutex_lock(&pool->mut);	
 #ifndef NDEBUG	
 	fprintf(stderr, "Resume pool. <ntasks_pending:"PRI64"d ntasks_running:%d ntasks_removing:%d> @threads_in_pool:%d>\n", 
-			pool->npendings, pool->nthreads_running, pool->ndispatchings, XLIST_SIZE(&pool->ths));
+			pool->npendings, pool->nthreads_running, pool->ndispatchings, pool->n_qths);
 #endif	
 	/* Notify the server threads that we are ready now. */
 	if (pool->paused && (POOL_F_CREATED & pool->status)) {
 		pool->paused = 0;
 		pool->launcher = 0;
 
-		assert(pool->npendings >= XLIST_SIZE(&pool->dispatch_q));
-		if (pool->npendings - XLIST_SIZE(&pool->dispatch_q)) {
+		assert(pool->npendings >= pool->n_qdispatch);
+		if (pool->npendings > pool->n_qdispatch) {
 			pool->ncont_completions = 0;
 			tpool_increase_threads(pool, NULL);
 		}
@@ -1372,7 +1314,8 @@ ck:
 				ptsk->f_vmflags |= TASK_VMARK_DO_AGAIN;
 		}
 	} else if (!err) {
-		XLIST_PUSHBACK(&pool->trace_q, &ptsk->trace_link);
+		list_add_tail(&ptsk->trace_link, &pool->trace_q);
+		++ pool->n_qtrace;
 		tpool_add_task_l(pool, ptsk);
 	}
 	OSPX_pthread_mutex_unlock(&pool->mut);
@@ -1382,16 +1325,17 @@ ck:
 
 static void
 tpool_add_task_l(struct tpool_t *pool, struct task_t *ptsk) {		
+	int q = 0, empty;
+
 	if (ptsk->do_again > 0) 
 		ptsk->do_again = 0;
 
 	/* Reset the task's flag */
 	ptsk->f_stat = TASK_STAT_WAIT;
 	ptsk->f_vmflags = 0;
-
+	
 	/* The flag TASK_F_ADJPRI is always be set when the task
-	 * is requested being rescheduled.
-	 */
+	 * is requested being rescheduled. */
 	if (TASK_F_ADJPRI & ptsk->f_mask) {
 		ptsk->f_mask &= ~TASK_F_ADJPRI;
 		if (ptsk->pri) 
@@ -1403,69 +1347,71 @@ tpool_add_task_l(struct tpool_t *pool, struct task_t *ptsk) {
 		ptsk->f_mask |= TASK_F_PUSH;
 		ptsk->pri_q = 0;
 		ptsk->pri = 0;
-		ptsk->pri_policy = POLICY_PRI_SORT_INSERTAFTER;
-	}
-
+		ptsk->pri_policy = P_SCHE_BACK;
+	}	
 	++ pool->ntasks_added;
 	++ pool->npendings;
+	q = ptsk->pri_q;
+	
+	empty = list_empty(&pool->pri_q[q].task_q);
 
 	/* Sort the task according to the priority */
-	assert(ptsk->pri_q >= 0 && ptsk->pri_q < pool->pri_q_num);
-	if ((ptsk->f_mask & TASK_F_PUSH) || XLIST_EMPTY(&pool->pri_q[ptsk->pri_q].task_q)) 
-		XLIST_PUSHBACK(&pool->pri_q[ptsk->pri_q].task_q, &ptsk->wait_link);	
+	assert(q >= 0 && q < pool->pri_q_num);
+	if ((ptsk->f_mask & TASK_F_PUSH) || empty)
+		list_add_tail(&ptsk->wait_link, &pool->pri_q[q].task_q);	
 	else {
-		int got = 0;
-		struct xlink *link;
+		struct task_t *nptsk;
 		
-		assert(ptsk->f_mask & TASK_F_PRI);
-		link = XLIST_BACK(&pool->pri_q[ptsk->pri_q].task_q);
-		if (POOL_READYQ_task(link)->pri >= ptsk->pri) {
-			struct task_t *ntsk = POOL_READYQ_task(link);
-			
-			if ((ptsk->pri < ntsk->pri) || (POLICY_PRI_SORT_INSERTAFTER == ptsk->pri_policy)) {
-				XLIST_PUSHBACK(&pool->pri_q[ptsk->pri_q].task_q, &ptsk->wait_link);
-				got = 1;
+		/* Compare the task with the last */
+		nptsk = list_entry(pool->pri_q[q].task_q.prev, struct task_t, wait_link);
+		if (ptsk->pri <= nptsk->pri) {	
+			if ((ptsk->pri < nptsk->pri) || (P_SCHE_BACK == ptsk->pri_policy)) {
+				list_add(&ptsk->wait_link, &nptsk->wait_link);
+				goto out;
 			}
-		}
 
-		if (!got) {
-			XLIST_FOREACH(&pool->pri_q[ptsk->pri_q].task_q, &link) {
-				struct task_t *ntsk = POOL_READYQ_task(link);
-
-				if ((ptsk->pri > ntsk->pri) ||
-					((POLICY_PRI_SORT_INSERTBEFORE == ptsk->pri_policy) &&
-					 (ptsk->pri == ntsk->pri))) {
-					got = 1;
-					XLIST_INSERTBEFORE(&pool->pri_q[ptsk->pri_q].task_q, link, &ptsk->wait_link);
-					break;
+			if (nptsk->pri == ptsk->pri) {
+				assert(P_SCHE_TOP == ptsk->pri_policy);
+				list_for_each_entry_continue_reverse(nptsk, &pool->pri_q[q].task_q,
+					struct task_t, wait_link) {
+					
+					if (nptsk->pri != ptsk->pri) {
+						list_add(&ptsk->wait_link, &nptsk->wait_link);
+						goto out;
+					}
 				}
 			}
+		} 
+		
+		/* Scan the tasks from the the head */
+		list_for_each_entry(nptsk, &pool->pri_q[q].task_q, struct task_t, wait_link) {
+			if ((ptsk->pri > nptsk->pri) || (ptsk->pri == nptsk->pri &&
+				 P_SCHE_TOP == ptsk->pri_policy)) {
+				list_add_tail(&ptsk->wait_link, &nptsk->wait_link);
+				break;
+			}
 		}
-		assert(got);
 	}
 
+out:
 	/* Should our task queue join in the ready group ? */
-	if (1 == XLIST_SIZE(&pool->pri_q[ptsk->pri_q].task_q)) {
-		struct tpool_priq_t *qfirst = XCOBJ(XLIST_FRONT(&pool->ready_q), struct tpool_priq_t);
-		
-		/* Compare our priority with the priority of the top queue */
-		if (XLIST_EMPTY(&pool->ready_q) || (ptsk->pri_q > qfirst->index)) 
-			XLIST_PUSHFRONT(&pool->ready_q, &pool->pri_q[ptsk->pri_q].link);
-		
-		/* Compare our priority with the priority of the tail queue */
-		else if (ptsk->pri_q < XCOBJ(XLIST_PRE(&qfirst->link), struct tpool_priq_t)->index) 
-			XLIST_PUSHBACK(&pool->ready_q, &pool->pri_q[ptsk->pri_q].link);
+	if (empty) {	
+		if (list_empty(&pool->ready_q)) 
+			list_add(&pool->pri_q[q].link, &pool->ready_q);
+
+		/* Compare the index with the last */
+		else if (q < list_entry(pool->ready_q.prev, struct tpool_priq_t, link)->index) 
+			list_add_tail(&pool->pri_q[q].link, &pool->ready_q);
 		
 		else {
-			struct xlink *link;
-
-			XLIST_FOREACH_EX(&pool->ready_q, &qfirst->link, &link) {
-				if (ptsk->pri_q > XCOBJ(link, struct tpool_priq_t)->index) {
-					XLIST_INSERTBEFORE(&pool->ready_q, link, &pool->pri_q[ptsk->pri_q].link);
+			struct tpool_priq_t *priq;
+			
+			list_for_each_entry(priq, &pool->ready_q, struct tpool_priq_t, link) {
+				if (q > priq->index) {
+					list_add_tail(&pool->pri_q[q].link, &priq->link);
 					break;
 				}
 			}
-			assert(link);
 		}
 	}
 	
@@ -1475,7 +1421,7 @@ tpool_add_task_l(struct tpool_t *pool, struct task_t *ptsk) {
 		 	 *    The pool should be woke up if all servering threads are
 		 	 * sleeping.
 		     */
-			|| (pool->nthreads_waiters && pool->nthreads_waiters >= XLIST_SIZE(&pool->ths_waitq))
+			|| (pool->nthreads_waiters && pool->nthreads_waiters >= pool->n_qths_wait)
 			) 
 			tpool_increase_threads(pool, NULL);	
 	}
@@ -1524,7 +1470,7 @@ struct waiter_link_t {
 	int  pushed;
 	long call;
 	long wkid;
-	struct xlink link;
+	struct list_head link;
 };
 
 #define WPUSH(pool, call, id) \
@@ -1532,22 +1478,20 @@ struct waiter_link_t {
 		struct waiter_link_t wl = {\
 			1, call, id, {0, 0}\
 		};\
-		XLIST_PUSHBACK(&(pool)->wq, &wl.link);
+		list_add_tail(&wl.link, &(pool)->wq);
 
 #define WPOP(pool, wokeup) \
-		XLIST_REMOVE(&(pool)->wq, &wl.link);\
+		list_del(&wl.link);\
 		wokeup = (1 != wl.pushed); \
 	} 
 
 void 
 tpool_wakeup(struct tpool_t *pool, long wkid) {
 	long lwoke = 0;
-	struct xlink *link;
 	struct waiter_link_t *wl;
 
 	OSPX_pthread_mutex_lock(&pool->mut);
-	XLIST_FOREACH(&pool->wq, &link) {
-		wl = XCOBJ(link, struct waiter_link_t);
+	list_for_each_entry(wl, &pool->wq, struct waiter_link_t, link) {
 		if (wkid != -1 && wl->wkid != wkid)
 			continue;
 		
@@ -1595,7 +1539,7 @@ tpool_throttle_wait(struct tpool_t *pool, long ms) {
 		error = pool->throttle_enabled ? 1 : 0;
 	else
 		for (error=0;;) {
-			if (!pool->throttle_enabled) {
+			if (!pool->throttle_enabled || !(POOL_F_CREATED & pool->status)) {
 				error = 0;
 				break;
 			}
@@ -1628,7 +1572,7 @@ tpool_task_wait(struct tpool_t *pool, struct task_t *ptsk, long ms) {
 
 	OSPX_pthread_mutex_lock(&pool->mut);	
 	for (error=0;;) {	
-		if (XLIST_EMPTY(&pool->trace_q) ||
+		if (list_empty(&pool->trace_q) ||
 			(ptsk && !ptsk->f_stat)) {
 			error = 0;
 			break;
@@ -1648,7 +1592,7 @@ tpool_task_wait(struct tpool_t *pool, struct task_t *ptsk, long ms) {
 		}
 
 		if (ptsk)
-			++ ptsk->waiters;
+			++ ptsk->ref;
 		++ pool->waiters;	
 
 		/* Wait for the tasks' completions in ms millionseconds */
@@ -1660,7 +1604,7 @@ tpool_task_wait(struct tpool_t *pool, struct task_t *ptsk, long ms) {
 		WPOP(pool, wokeup)
 
 		if (ptsk)
-			-- ptsk->waiters;
+			-- ptsk->ref;
 		-- pool->waiters;
 	}		
 	OSPX_pthread_mutex_unlock(&pool->mut);
@@ -1669,6 +1613,9 @@ tpool_task_wait(struct tpool_t *pool, struct task_t *ptsk, long ms) {
 }
 
 
+/* NOTE:
+ * 		The user must ensure that the task objects are valid before
+ * returning from @tpool_task_wait_ex */
 static int  
 tpool_task_wait_ex(struct tpool_t *pool, long call, struct task_t *entry, int *n, int nlimit, long ms) {
 	int error, ok;
@@ -1687,6 +1634,10 @@ tpool_task_wait_ex(struct tpool_t *pool, long call, struct task_t *entry, int *n
 		if (entry[i].hp_last_attached != pool || !entry[i].f_stat) {
 			++ ok;
 		}
+
+		/* It's not safe here to wait the task who is added into 
+		 * the pool by tpool_add_routine */
+		assert(!(entry[i].f_mask & TASK_F_ONCE));
 	}
 	
 	if (ok >= nlimit) {
@@ -1714,7 +1665,7 @@ tpool_task_wait_ex(struct tpool_t *pool, long call, struct task_t *entry, int *n
 		 * 	   We increase the waiters of all tasks 
 		 */
 		for (i=0; i<num; i++) 
-			++ entry[i].waiters;
+			++ entry[i].ref;
 		pool->waiters += num;
 
 		/* Wait for the tasks' completions in ms millionseconds */
@@ -1726,7 +1677,7 @@ tpool_task_wait_ex(struct tpool_t *pool, long call, struct task_t *entry, int *n
 		WPOP(pool, wokeup)
 
 		for (i=0; i<num; i++) 
-			-- entry[i].waiters;
+			-- entry[i].ref;
 		pool->waiters -= num;
 	}			
 	OSPX_pthread_mutex_unlock(&pool->mut);
@@ -1759,14 +1710,12 @@ tpool_task_wait3(struct tpool_t *pool, struct task_t *entry, int *n, long ms) {
 int  
 tpool_task_waitex(struct tpool_t *pool, int (*task_match)(struct tpool_tskstat_t *, void *), void *arg, long ms) {
 	int got, error, wokeup = 0;
-	struct xlink *link;
 	struct task_t *ptsk;
 	struct tpool_tskstat_t stat;
 
 	OSPX_pthread_mutex_lock(&pool->mut);	
 	for (error=0, got=0;;) {	
-		XLIST_FOREACH(&pool->trace_q, &link) {
-			ptsk = POOL_TRACEQ_task(link);
+		list_for_each_entry(ptsk, &pool->trace_q, struct task_t, trace_link) {
 			ACQUIRE_TASK_STAT(pool, ptsk, &stat);
 			if (task_match(&stat, arg)) {
 				if (!ms) 
@@ -1792,7 +1741,7 @@ tpool_task_waitex(struct tpool_t *pool, int (*task_match)(struct tpool_tskstat_t
 		}
 		got = 0;
 	
-		++ ptsk->waiters;
+		++ ptsk->ref;
 		++ pool->waiters;
 		
 		WPUSH(pool, WK_T_WAITEX, tpool_wkid())
@@ -1802,8 +1751,12 @@ tpool_task_waitex(struct tpool_t *pool, int (*task_match)(struct tpool_tskstat_t
 			error = OSPX_pthread_cond_wait(&pool->cond_comp, &pool->mut);	
 		WPOP(pool, wokeup)
 
-		-- ptsk->waiters;
+		-- ptsk->ref;
 		-- pool->waiters;
+
+		/* Are we responsible for cleaning the task object */
+		if ((TASK_F_ONCE & ptsk->f_mask) && !ptsk->ref)
+			tpool_delete_task_l(pool, ptsk);
 	}		
 	OSPX_pthread_mutex_unlock(&pool->mut);
 
@@ -1852,271 +1805,6 @@ tpool_pending_leq_wait(struct tpool_t *pool,  int n_max_pendings, long ms) {
 	return error;
 }
 
-static int
-tpool_thread_entry(void *arg) {
-	int structure_release = 0;
-	struct tpool_thread_t *self = (struct tpool_thread_t *)arg;
-	struct tpool_t *pool = self->pool;
-	
-	tpool_thread_setstatus(self, THREAD_STAT_JOIN);	
-	for (;;) {
-		tpool_schedule(pool, self);
-		
-		/* The exiting threads may be reused by our pool.
-		 *  <see @tpool_add_threads for more details>
-		 */
-		OSPX_pthread_mutex_lock(&pool->mut);
-		if (!self->run) {
-			assert(THREAD_STAT_RM & self->status);
-			tpool_thread_setstatus_l(self, THREAD_STAT_LEAVE);
-			
-			if (self->structure_release)
-				structure_release = 1;
-			else {
-				/* Reset the thread structure and push it back to
-				 * the free queue.
-				 */
-				INIT_thread_structure(pool, self, 0);
-				XLIST_PUSHBACK(&pool->freelst, &self->link_free);
-			}
-
-			OSPX_pthread_mutex_unlock(&self->pool->mut);
-			break;
-		}
-		OSPX_pthread_mutex_unlock(&pool->mut);
-	}
-
-	/* We should decrease the references since we 
-	 * have increased it in the @tpool_add_thread.
-	 */	
-	tpool_release_ex(pool, 0, 0);
-	
-	if (structure_release)
-		free(self);	
-	return 0;
-}
-
-static int
-tpool_add_threads(struct tpool_t *pool, struct tpool_thread_t *th, int nthreads, long lflags /* reserved */) {
-	int n;
-	
-	assert(!lflags);
-	
-	/* Check whether we can reuse the dying threads */
-	if ((nthreads > 0) && pool->nthreads_dying) {
-		struct xlink *link;
-		struct tpool_thread_t *th;
-
-		XLIST_FOREACH(&pool->ths, &link) {
-			th = POOL_Q_thread(link);
-
-			if (!(THREAD_STAT_RM & th->status)) 
-				continue;
-			assert(!th->run);
-			th->run = 1;
-			th->status &= ~THREAD_STAT_RM;
-			th->status |= lflags;
-
-			switch (th->status & ~THREAD_STAT_INNER) {
-			case THREAD_STAT_RUN:
-				-- pool->nthreads_dying_run;
-				break;
-			case THREAD_STAT_WAIT:
-				++ pool->nthreads_real_sleeping;
-				break;
-			default:
-				;
-			}
-			++ pool->nthreads_real_pool;
-			
-			/* Give a notification to @tpool_adjust_wait */
-			if (!-- pool->nthreads_dying) 
-				OSPX_pthread_cond_broadcast(&pool->cond_ths);
-					
-			-- nthreads;
-			if (!pool->nthreads_dying || !nthreads)
-				break;
-		}
-
-		/* Try to wake up the service threads if there are tasks
-		 * wait for being scheduled.
-		 */
-		if (pool->nthreads_real_sleeping && 
-			((!pool->paused && pool->npendings) || !XLIST_EMPTY(&pool->dispatch_q))) {
-			OSPX_pthread_cond_broadcast(&pool->cond);
-			pool->nthreads_waiters = 0 ;
-		}
-	}
-	
-	/* Actually, In order to reduce the time to hold the global lock,
-	 * we'll try to just add the threads structure into the threads sets, 
-	 * and call @pthread_create in the background. 
-	 */
-	for (n=0; n<nthreads; n++) {
-		struct xlink *link;
-		struct tpool_thread_t *self;
-		
-		if (XLIST_EMPTY(&pool->freelst)) {
-			self = (struct tpool_thread_t *)malloc(sizeof(*self));
-			if (!self) {
-				errno = ENOMEM;
-				__SHOW_ERR__(__FUNCTION__);
-				break;
-			}
-			INIT_thread_structure(pool, self, 1);	
-		} else {
-			XLIST_POPFRONT(&pool->freelst, link);
-			self = XCOBJEX(link, struct tpool_thread_t, link_free);
-			assert(!self->structure_release);
-		}
-
-		/* We increase the reference to make sure that 
-		 * the task pool object will always exist before 
-		 * the service thread's exitting.
-		 */
-		tpool_addref_l(pool, 0, dummy_null_lptr);	
-#ifdef _UNLOCK_PTHREAD_CREATE	
-		if (!th) {
-#endif	
-			if ((errno = OSPX_pthread_create(&self->thread_id, 0, tpool_thread_entry, self))) {
-				__SHOW_ERR__("pthread_create error");
-				tpool_release_l(pool, 0, dummy_null_lptr);
-				if (self->structure_release)
-					free(self);
-				else 
-					XLIST_PUSHBACK(&pool->freelst, &self->link_free);
-				break;
-			}
-			#ifndef NDEBUG	
-				fprintf(stderr, "create THREAD:0x%x\n", (int)self);
-			#endif		
-#ifdef _UNLOCK_PTHREAD_CREATE	
-		} else 
-			XLIST_PUSHBACK(&th->thq, &self->link_free);
-#endif		
-		XLIST_PUSHBACK(&pool->ths, &self->link);	
-	}
-	pool->nthreads_real_pool += n;
-	
-	/* Update the statics report */
-	if (pool->nthreads_peak < pool->nthreads_real_pool) 
-		pool->nthreads_peak = pool->nthreads_real_pool;
-	
-	return n;
-}
-
-/* The core algorithms to create threads */
-static void 
-tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {	
-	int ntasks_pending = pool->paused ? XLIST_SIZE(&pool->dispatch_q) : pool->npendings;
-	
-	/* Check the pool status */
-	if (!ntasks_pending) {
-		pool->launcher = 0;
-		return;
-	} 
-		
-	/* We forbidden the same thread creating working threads continuously */
-	if (pool->launcher) {
-		if ((self && self->thread_id == pool->launcher) ||
-			(!self && OSPX_pthread_id() == pool->launcher)) {
-			pool->launcher = 0;
-			return;
-		}
-		pool->launcher = 0;
-	}
-	/* We wake up the sleeping threads */
-	assert(pool->nthreads_waiters >= 0 && 
-		pool->nthreads_waiters <= XLIST_SIZE(&pool->ths_waitq));
-	if (!XLIST_EMPTY(&pool->ths_waitq)) {
-		/* Caculate the number of threads who should be woke up to provide services */
-		ntasks_pending -= (pool->nthreads_real_pool + pool->nthreads_going_rescheduling 
-			
-			/* We decrease the number of threads who is running or sleeping */
-			+ pool->nthreads_dying_run - pool->nthreads_running - pool->nthreads_real_sleeping 
-
-			/* We should decrease the number of threads that has been woke up by us */
-			+ XLIST_SIZE(&pool->ths_waitq) - pool->nthreads_waiters);
-		
-		if (ntasks_pending > 0 && pool->nthreads_waiters >= XLIST_SIZE(&pool->ths_waitq)) {
-			int nwake = min(ntasks_pending, 3);
-			/* NOTE:
-			 * 		We do not care about which thread will be woke up, we just 
-			 * wake up no more than 3 threads to provide services. so the threads
-			 * should check the pool status again if they are going to exit after 
-			 * its having been woke up.
-			 */
-			if (pool->nthreads_waiters  > nwake) {
-				pool->nthreads_waiters -= nwake;
-				
-				/* We just simply give threads a notification */
-				for (;nwake > 0; --nwake)
-					OSPX_pthread_cond_signal(&pool->cond);
-			} else {
-				pool->nthreads_waiters = 0;
-				OSPX_pthread_cond_broadcast(&pool->cond);
-			}
-			pool->launcher = self ? self->thread_id : OSPX_pthread_id();
-		} 
-		return;
-	}
-	
-#if 0
-	if (!(POOL_F_CREATED & pool->status)) {
-		/* If there are dispatching tasks, we try to create
-		 * service threads to schedule them even if the pool
-		 * is being destroyed.
-		 *  <see @tpool_release_ex/@tpool_remove_pending_task2 for more details>
-		 */
-		if (XLIST_EMPTY(&pool->dispatch_q) ||
-			((0 == pool->ref) && !pool->release_cleaning))
-			return 0;
-	}
-#endif
-	assert(pool->nthreads_running >= pool->nthreads_going_rescheduling &&
-		   pool->nthreads_real_pool <= XLIST_SIZE(&pool->ths));
-	
-	/* Verify the @maxthreads */
-	if (pool->maxthreads > pool->nthreads_real_pool) {
-		int curthreads_pool_free = pool->nthreads_real_pool + pool->nthreads_going_rescheduling 
-			+ pool->nthreads_dying_run - pool->nthreads_running;
-		assert(curthreads_pool_free >= 0);
-		
-		/* Compute the number of threads who should be
-		 * created to provide services
-	 	 */
-		if (curthreads_pool_free < pool->limit_threads_free) {	
-			int n = pool->maxthreads - pool->nthreads_real_pool;
-			/* Compute the number of threads who is should be created
-			 * according to the @limit_threads_free.
-			 */
-			int nthreads = pool->limit_threads_free - curthreads_pool_free;	
-			assert(n >= 0);
-			if (n < nthreads)
-				nthreads = n;
-
-			/* Acquire the number of pending tasks */
-			assert(pool->npendings >= XLIST_SIZE(&pool->dispatch_q));	
-			ntasks_pending = pool->npendings - XLIST_SIZE(&pool->dispatch_q);
-			if (!XLIST_EMPTY(&pool->dispatch_q)) 
-				ntasks_pending += 1;
-			
-			/* Create the service threads propriately according to the 
-			 * threads' status.
-			 */
-			n = ntasks_pending - curthreads_pool_free;
-			if (n < nthreads) 
-				nthreads = n;
-
-			if (nthreads > 0) {
-				if (nthreads > pool->limit_threads_create_per_time)
-					nthreads = pool->limit_threads_create_per_time;
-				nthreads = tpool_add_threads(pool, self, nthreads, 0);		
-				pool->launcher = self ? self->thread_id : OSPX_pthread_id();
-			}
-		}
-	}	
-}
 
 /* It seems that OSPX_random() can not work well on windows, so
  * we use @tpool_random to instead.
@@ -2151,17 +1839,294 @@ tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {
 			if (extra <= 5) \
 				*to = (pool)->acttimeo + tpool_random(pool, self) % pool->randtimeo;\
 			else\
-				*to = tpool_random(pool, self) % 35000;\
+				*to = (long)tpool_random(pool, self) % 35000;\
 			if ((*to) < 0) \
 				*to = (*to) & 0x0000ffff;\
 		} \
 	} while (0)
 
 
-#ifdef _UNLOCK_PTHREAD_CREATE	
+#ifndef __cplusplus 
+#ifdef _WIN32
+#define inline __inline
+#endif
+#endif
+
+static inline void 
+tpool_thread_status_change(struct tpool_t *pool, struct tpool_thread_t *self, uint16_t status, int synchronized) {	
+	if (!synchronized)
+		OSPX_pthread_mutex_lock(&pool->mut);
+	
+	switch (status) {
+	case THREAD_STAT_JOIN:	
+		break;
+	case THREAD_STAT_WAIT: 
+		if (!(THREAD_STAT_RM & self->status))
+			++ pool->nthreads_real_sleeping;
+		++ self->ncont_rest_counters;
+		
+		/* Add the threads into the wait queue */
+		list_add_tail(&self->run_link, &pool->ths_waitq);
+		++ pool->nthreads_waiters;
+		++ pool->n_qths_wait;
+		
+		/* Reset the thread launcher */
+		if (pool->launcher && pool->launcher == OSPX_pthread_id())
+			pool->launcher = 0;
+		break;
+	case THREAD_STAT_TIMEDOUT: {	
+		int nthreads_pool = pool->n_qths - pool->nthreads_dying;
+		
+		/* We try to remove the thread from the servering sets 
+		 * if the threads should be stopped providing service.
+		 */	
+		if (!(THREAD_STAT_RM & self->status)) {
+			if ((nthreads_pool > pool->minthreads) && ((!pool->npendings) || pool->paused)) { 
+				status = THREAD_STAT_RM;
+				++ pool->nthreads_dying;
+				-- pool->nthreads_real_pool;
+				self->run = 0;
+				break;
+			}
+		}
+		status = THREAD_STAT_FREE;	
+		break;
+	}
+	case THREAD_STAT_FORCE_QUIT: {
+		assert(self->run && !(THREAD_STAT_RM & self->status));
+		status = THREAD_STAT_RM;
+		++ pool->nthreads_dying;
+		-- pool->nthreads_real_pool;
+		self->run = 0;		
+		
+		/* WAIT-->FREE (woke up)-->QUIT */
+		/* We look up the task status before the thread's exiting since we do 
+		 * not know that which thread will be woke up by @tpool_increase_thread
+		 */
+		if (!list_empty(&pool->dispatch_q) || (!pool->paused && pool->npendings))
+			tpool_increase_threads(pool, self);
+		break;
+	}
+	case THREAD_STAT_RUN: 
+		assert(__curtask);		
+#if !defined(NDEBUG) && !defined(_WIN32)
+		if (__curtask->task_name && strlen(__curtask->task_name))
+			prctl(PR_SET_NAME, __curtask->task_name);
+#endif
+		++ pool->nthreads_running;
+		if (THREAD_STAT_RM & self->status) {
+			assert(!self->run);
+			++ pool->nthreads_dying_run;
+		}
+				
+		/* Reset the @ncont_rest_counters */
+		if (self->ncont_rest_counters)
+			self->ncont_rest_counters = 0;
+
+		/* Try to create more threads to provide services 
+		 * before our's executing the task. */
+		if (pool->npendings && pool->nthreads_waiters == pool->n_qths_wait &&
+			pool->maxthreads > pool->nthreads_real_pool)
+			tpool_increase_threads(pool, self);
+		break;
+	case THREAD_STAT_COMPLETE:
+		-- pool->nthreads_running;
+		status = THREAD_STAT_FREE;	
+		
+		if (THREAD_STAT_RM & self->status) {
+			assert(!self->run);
+			-- pool->nthreads_dying_run;
+		}
+
+		/* Has @task_run been executed ? */
+		if (self->task_type & TASK_TYPE_DISPATCHED)
+			++ pool->ntasks_dispatched;
+		else
+			++ pool->ntasks_done;
+#ifndef NDEBUG
+		++ self->ntasks_done;
+#endif			
+		/* We do not need to check @__curtask at present. 
+         * so it is not neccessary to reset it to waste our
+		 * CPU.
+		 */
+		//__curtask = NULL;
+		break;
+	case THREAD_STAT_FREE: 
+		break;
+	case THREAD_STAT_LEAVE: 
+		/* Remove current thread from the THREAD queue */
+		list_del(&self->link);
+		-- pool->n_qths;
+
+		/* Remove current thread from the RM queue */
+		if (THREAD_STAT_RM & self->status) {
+			assert(pool->nthreads_dying > 0 && !self->run);
+			
+			/* Give @tpool_adjust_wait a notification */
+			if (!-- pool->nthreads_dying)
+				OSPX_pthread_cond_broadcast(&pool->cond_ths);
+		} else if (list_empty(&pool->ths))
+			/* Give @tpool_release_ex a notification */
+			OSPX_pthread_cond_broadcast(&pool->cond_ths);
+		
+		/* Reset the thread launcher */
+		if (pool->launcher && pool->n_qths == 1) 
+			pool->launcher = 0;		
+#ifndef NDEBUG
+		fprintf(stderr, "THREAD:%p exits. <ntasks_done:%d status:0x%lx> (@threads_in_pool:%d(%d) @tasks_in_pool:"PRI64"u)\n", 
+			self, self->ntasks_done, (long)self->status, pool->n_qths, pool->nthreads_real_pool,
+			pool->n_qtrace);
+#endif			
+		break;
+	}
+
+	/* Decrease the rest counter */
+	if (THREAD_STAT_WAIT == (self->status & ~THREAD_STAT_INNER)) {	
+		if (!(THREAD_STAT_RM & self->status)) { 
+			assert(pool->nthreads_real_sleeping > 0);
+			-- pool->nthreads_real_sleeping;
+		}
+		
+		/* Remove the thread from the wait queue */
+		list_del(&self->run_link);
+		-- pool->n_qths_wait;
+
+		/* 1. @OSPX_pthread_cond_signal may wake up more than one sleeping threads 
+		 * 2. Thread is changing status from WAIT to WAIT_TIMEDOUT.
+		 */
+		if (pool->nthreads_waiters > pool->n_qths_wait)
+			pool->nthreads_waiters = pool->n_qths_wait;
+	}	
+	self->status = status | (self->status & THREAD_STAT_INNER);
+	
+	if (!synchronized)
+		OSPX_pthread_mutex_unlock(&pool->mut);
+}
+
+static inline int
+tpool_gettask(struct tpool_t *pool, struct tpool_thread_t *self) {
+	struct task_t *ptsk = NULL;
+	int ready = pool->paused ? 0 : (pool->npendings > pool->n_qdispatch);
+	
+	/* Scan the dispaching queue firstly */
+	if (!list_empty(&pool->dispatch_q)) {
+		/* We give a chance to the ready tasks */
+		if (!ready || pool->ncont_completions < pool->limit_cont_completions) {
+			ptsk = list_entry(pool->dispatch_q.next, struct task_t, wait_link);
+			list_del(&ptsk->wait_link);
+			-- pool->n_qdispatch;
+			++ pool->ncont_completions;
+			self->task_type = TASK_TYPE_DISPATCHED;
+		}
+	
+	} else if (!ready) { 
+		/* Try to free the objects */
+		if (!pool->GC && !list_empty(&pool->clq)) {
+			pool->GC  = self;
+			list_splice_init(&pool->clq, &pool->gcq);
+			__curtask = &pool->sys_GC_task;
+			__curtask->th = self;
+			self->task_type = TASK_TYPE_GC;
+			return 1;
+		}
+		return 0;
+	}
+	
+	/* Scan the ready queue */
+	if (!ptsk) {
+		struct tpool_priq_t *priq;
+		assert(pool->npendings > 0 && !list_empty(&pool->ready_q));
+
+		/* Scan the priority queue */
+		priq = list_entry(pool->ready_q.next, struct tpool_priq_t, link);
+
+		/* Pop up a task from the task queue */
+		ptsk = list_entry(priq->task_q.next, struct task_t, wait_link);
+		list_del(&ptsk->wait_link);
+
+		/* Should our queue leave the ready group ? */
+		if (list_empty(&priq->task_q)) 
+			list_del(&priq->link);
+#ifndef NDEBUG
+		else {
+			struct task_t *n = list_entry(priq->task_q.next,
+									struct task_t, wait_link);
+			assert(ptsk->pri >= n->pri);
+		}
+#endif
+		pool->ncont_completions = 0;
+		self->task_type = 0;
+	}
+
+	/* Give a notification to @tpool_free_wait */
+	if (pool->npendings_ev >= -- pool->npendings)
+		OSPX_pthread_cond_broadcast(&pool->cond_ev);
+
+	ptsk->th = self;
+	ptsk->f_stat &= ~TASK_STAT_WAIT;
+	ptsk->f_stat |= TASK_STAT_SCHEDULING;
+	__curtask = ptsk;
+		
+	/* Push the task into the running queue and
+	 * mark our thread status with THREAD_STAT_RUN
+	 */
+	tpool_thread_setstatus_l(self, THREAD_STAT_RUN);		
+
+#ifndef NDEBUG
+	fprintf(stderr, "THREAD:%p running task(%s/%p). <ntasks_done:%u ntasks_pending:"PRI64"d>\n", 
+			self, __curtask->task_name, __curtask,
+			self->ntasks_done, pool->npendings);
+#endif	
+	return 1;
+}
+
+static int
+tpool_thread_entry(void *arg) {
+	int structure_release = 0;
+	struct tpool_thread_t *self = (struct tpool_thread_t *)arg;
+	struct tpool_t *pool = self->pool;
+	
+	tpool_thread_setstatus(self, THREAD_STAT_JOIN);	
+	for (;;) {
+		tpool_schedule(pool, self);
+		
+		/* The exiting threads may be reused by our pool.
+		 *  <see @tpool_add_threads for more details>
+		 */
+		OSPX_pthread_mutex_lock(&pool->mut);
+		if (!self->run) {
+			assert(THREAD_STAT_RM & self->status);
+			tpool_thread_setstatus_l(self, THREAD_STAT_LEAVE);
+			
+			if (self->structure_release)
+				structure_release = 1;
+			else {
+				/* Reset the thread structure and push it back to
+				 * the free queue.
+				 */
+				INIT_thread_structure(pool, self, 0);
+				list_add_tail(&self->link_free, &pool->freelst);
+			}
+
+			OSPX_pthread_mutex_unlock(&self->pool->mut);
+			break;
+		}
+		OSPX_pthread_mutex_unlock(&pool->mut);
+	}
+
+	/* We should decrease the references since we 
+	 * have increased it in the @tpool_add_thread.
+	 */	
+	tpool_release_ex(pool, 0, 0);
+	
+	if (structure_release)
+		free(self);	
+	return 0;
+}
+
 static void
 do_create_threads(struct tpool_thread_t *self) {
-	struct xlink *link;
 	struct tpool_thread_t *th;
 	struct tpool_t *pool = self->pool;
 
@@ -2169,16 +2134,13 @@ do_create_threads(struct tpool_thread_t *self) {
 	errno = 0;
 
 	/* Do pthread_create here */
-	while (!XLIST_EMPTY(&self->thq)) {
-		XLIST_POPFRONT(&self->thq, link);
-		th = THREAD_CRTQ_task(link);
+	while (!list_empty(&self->thq)) {
+		th = list_entry(self->thq.next, struct tpool_thread_t, link_free);
+		list_del(&th->link_free);
 		if (errno) {
 			int release = th->structure_release;
 
-			/* Remove current thread from the THREAD queue */
 			OSPX_pthread_mutex_lock(&pool->mut);
-			XLIST_REMOVE(&pool->ths, &self->link);
-
 			/* Remove current thread from the RM queue */
 			if (THREAD_STAT_RM & self->status) {
 				assert(pool->nthreads_dying > 0 && !th->run);
@@ -2186,12 +2148,19 @@ do_create_threads(struct tpool_thread_t *self) {
 				/* Give @tpool_adjust_wait a notification */
 				if (!-- pool->nthreads_dying)
 					OSPX_pthread_cond_broadcast(&pool->cond_ths);
-			} else if (XLIST_EMPTY(&pool->ths))
+			} else {
+				-- pool->nthreads_real_pool;
 				/* Give @tpool_release_ex a notification */
-				OSPX_pthread_cond_broadcast(&pool->cond_ths);
+				if (list_empty(&pool->ths))
+					OSPX_pthread_cond_broadcast(&pool->cond_ths);
+			}
 
 			if (!release)
-				XLIST_PUSHBACK(&pool->freelst, &th->link_free);
+				list_add_tail(&th->link_free, &pool->freelst);
+			
+			/* Remove current thread from the THREAD queue */
+			list_del(&self->link);
+			-- pool->n_qths;
 			tpool_release_l(pool, 0, dummy_null_lptr);
 			OSPX_pthread_mutex_unlock(&pool->mut);
 			
@@ -2201,12 +2170,14 @@ do_create_threads(struct tpool_thread_t *self) {
 
 		if ((errno = OSPX_pthread_create(&th->thread_id, 0, tpool_thread_entry, th))) {
 			__SHOW_ERR__("pthread_create error");
-			XLIST_PUSHBACK(&self->thq, link);
+			list_add_tail(&th->link_free, &self->thq);
 			continue;
 		}
+		#ifndef NDEBUG	
+			fprintf(stderr, "create THREAD:0x%p\n", th);
+		#endif		
 	}	
 }
-#endif
 
 static void 
 tpool_schedule(struct tpool_t *pool, struct tpool_thread_t *self) {	
@@ -2242,10 +2213,9 @@ tpool_schedule(struct tpool_t *pool, struct tpool_thread_t *self) {
 		OSPX_pthread_mutex_unlock(&pool->mut);
 		
 		/* Check the thread queue */
-	#ifdef _UNLOCK_PTHREAD_CREATE	
-		if (!XLIST_EMPTY(&self->thq)) 
+		if (!list_empty(&self->thq)) 
 			do_create_threads(self);
-	#endif
+		
 		self->task_complete = __curtask->task_complete;
 		__curtask->pdetached = &self->detached;
 
@@ -2264,230 +2234,295 @@ tpool_schedule(struct tpool_t *pool, struct tpool_thread_t *self) {
 	}
 }
 
-static int
-tpool_gettask(struct tpool_t *pool, struct tpool_thread_t *self) {
-	struct xlink *link = NULL;
-	int ntasks_ready = pool->paused ? 0 : XLIST_SIZE(&pool->ready_q);
-	
-	/* Scan the dispaching queue firstly */
-	if (!XLIST_EMPTY(&pool->dispatch_q)) {
-		/* We give a chance to the ready tasks */
-		if (!ntasks_ready || pool->ncont_completions < pool->limit_cont_completions) {
-			XLIST_POPFRONT(&pool->dispatch_q, link);
-			++ pool->ncont_completions;
-			self->task_type = TASK_TYPE_DISPATCHED;
+static void
+tpool_task_complete(struct tpool_t *pool, struct tpool_thread_t *self, struct task_t *ptsk, int task_code) {	
+	assert(self || ptsk->task_complete);
+
+	/* Call the complete routine to dispatch the result */
+	if (self) {
+		if (self->task_complete) {
+			long vmflags = (TASK_TYPE_DISPATCHED & self->task_type) ?
+				TASK_VMARK_REMOVE_BYPOOL : TASK_VMARK_DONE;
+
+			if (!(POOL_F_CREATED & pool->status))
+				vmflags |= TASK_VMARK_POOL_DESTROYING;
+
+			self->task_complete(ptsk, vmflags, task_code);
 		}
-	
-	} else if (!ntasks_ready) { 
-		/* Try to free the objects */
-		if (!pool->GC && !XLIST_EMPTY(&pool->clq)) {
-			pool->GC  = self;
-			XLIST_SWAP(&pool->gcq, &pool->clq);
-			__curtask = &pool->sys_GC_task;
-			__curtask->th = self;
-			self->task_type = TASK_TYPE_GC;
-			return 1;
-		}
-		return 0;
-	}
-	
-	/* Scan the ready queue */
-	if (!link) {
-		struct tpool_priq_t *priq;
-		assert(pool->npendings > 0 && !XLIST_EMPTY(&pool->ready_q));
-
-		/* Scan the priority queue */
-		link = XLIST_FRONT(&pool->ready_q);
-		priq = XCOBJ(link, struct tpool_priq_t);
-
-		/* Pop up a task from the task queue */
-		XLIST_POPFRONT(&priq->task_q, link);
-		if (XLIST_EMPTY(&priq->task_q)) 
-			XLIST_REMOVE(&pool->ready_q, &priq->link);
-#ifndef NDEBUG
-		else {
-			struct xlink *nlink;
-			struct task_t *cur, *next;
-			
-			/* Verify the priority */
-			cur   = POOL_READYQ_task(link);
-			nlink = XLIST_FRONT(&priq->task_q);
-			next  = POOL_READYQ_task(nlink);
-			assert(cur->pri >= next->pri);
-		}
-#endif
-		pool->ncont_completions = 0;
-		self->task_type = 0;
-	}
-
-	/* Give a notification to @tpool_free_wait */
-	if (pool->npendings_ev >= -- pool->npendings)
-		OSPX_pthread_cond_broadcast(&pool->cond_ev);
-
-	__curtask = POOL_READYQ_task(link);
-	__curtask->th = self;
-	__curtask->f_stat &= ~TASK_STAT_WAIT;
-	__curtask->f_stat |= TASK_STAT_SCHEDULING;
 		
-	/* Push the task into the running queue and
-	 * mark our thread status with THREAD_STAT_RUN
-	 */
-	tpool_thread_setstatus_l(self, THREAD_STAT_RUN);		
+		if (self->detached) {
+			self->detached = 0;	
+			tpool_thread_setstatus(self, THREAD_STAT_COMPLETE);
+			return;
+		}
+	} else {
+		uint8_t detached = 0;
+		
+		/* Set the variable address for the task */
+		ptsk->pdetached = &detached;
+		ptsk->task_complete(ptsk, ptsk->f_vmflags, task_code);
+	
+		/* We do nothing here if the task has been detached */
+		if (detached)
+			return;	
+	} 
 
-#ifndef NDEBUG
-	fprintf(stderr, "THREAD:%p running task(%s/%p). <ntasks_done:%u ntasks_pending:"PRI64"d>\n", 
-			self, __curtask->task_name, __curtask,
-			self->ntasks_done, pool->npendings);
-#endif	
-	return 1;
+	OSPX_pthread_mutex_lock(&pool->mut);	
+	/* We decrease the @ndispatchings if the task has been marked with
+	 * TASK_VMARK_REMOVE 
+	 */
+	if (TASK_VMARK_REMOVE & ptsk->f_vmflags) {
+		assert(pool->ndispatchings > 0);
+		-- pool->ndispatchings;		
+	} 	
+	assert(!((TASK_VMARK_REMOVE & ptsk->f_vmflags) &&
+		   (TASK_VMARK_DO_AGAIN & ptsk->f_vmflags)));
+	
+	/* We deliver the task into the ready queue if
+	 * the user wants to reschedule it again
+	 */
+	if ((TASK_VMARK_DO_AGAIN & ptsk->f_vmflags) || ptsk->do_again) {				
+		/* Remove the trace record */
+		if (self && !(THREAD_STAT_RM & self->status)) {
+			/* @tpool_add_task_l may create threads to provide service,
+			 * we increase the rescheduling tasks counter before the task's
+			 * being delived to the task queue to make sure that the pool
+			 * can compute the service threads number accurately.
+			 */
+			++ pool->nthreads_going_rescheduling;
+			tpool_add_task_l(pool, ptsk);	
+			
+			/* We decrease the rescheduling tasks counter if the task
+			 * has been added into the task queue. */
+			-- pool->nthreads_going_rescheduling;
+		} else
+			tpool_add_task_l(pool, ptsk);	
+		
+	} else {
+		/* Reset the status of the task */
+		ptsk->f_stat = 0;
+		list_del(&ptsk->trace_link);
+		-- pool->n_qtrace;
+
+		/* We triggle a event for @tpool_task_wait(pool, NULL, -1), @tpool_suspend(pool, 1)*/
+		TRY_wakeup_waiters(pool, ptsk);
+		if ((ptsk->f_mask & TASK_F_ONCE) && !ptsk->ref)
+			tpool_delete_task_l(pool, ptsk);
+	}
+
+	if (self) 
+		tpool_thread_setstatus_l(self, THREAD_STAT_COMPLETE);	
+	OSPX_pthread_mutex_unlock(&pool->mut);			
 }
 
 
-void 
-tpool_thread_status_change(struct tpool_t *pool, struct tpool_thread_t *self, long status, int synchronized) {	
-	if (!synchronized)
-		OSPX_pthread_mutex_lock(&pool->mut);
+static inline int
+tpool_add_threads(struct tpool_t *pool, struct tpool_thread_t *th, int nthreads, long lflags /* reserved */) {
+	int n;
 	
-	switch (status) {
-	case THREAD_STAT_JOIN:	
-		break;
-	case THREAD_STAT_WAIT: 
-		if (!(THREAD_STAT_RM & self->status))
-			++ pool->nthreads_real_sleeping;
-		++ self->ncont_rest_counters;
+	assert(!lflags);
+	
+	/* Check whether we can reuse the dying threads */
+	if (nthreads > 0 && pool->nthreads_dying) {
+		struct tpool_thread_t *th;
 		
-		/* Add the threads into the wait queue */
-		XLIST_PUSHBACK(&pool->ths_waitq, &self->run_link);
-		++ pool->nthreads_waiters;
+		list_for_each_entry(th, &pool->ths, struct tpool_thread_t, link) {
+			if (!(THREAD_STAT_RM & th->status)) 
+				continue;
+			assert(!th->run);
+			th->run = 1;
+			th->status &= ~THREAD_STAT_RM;
+			th->status |= lflags;
+
+			switch (th->status & ~THREAD_STAT_INNER) {
+			case THREAD_STAT_RUN:
+				-- pool->nthreads_dying_run;
+				break;
+			case THREAD_STAT_WAIT:
+				++ pool->nthreads_real_sleeping;
+				break;
+			default:
+				;
+			}
+			++ pool->nthreads_real_pool;
+			
+			/* Give a notification to @tpool_adjust_wait */
+			if (!-- pool->nthreads_dying) 
+				OSPX_pthread_cond_broadcast(&pool->cond_ths);
+					
+			-- nthreads;
+			if (!pool->nthreads_dying || !nthreads)
+				break;
+		}
+
+		/* Try to wake up the service threads if there are tasks
+		 * wait for being scheduled. */
+		if (pool->nthreads_real_sleeping && 
+			((!pool->paused && pool->npendings) || !list_empty(&pool->dispatch_q))) {
+			OSPX_pthread_cond_broadcast(&pool->cond);
+			pool->nthreads_waiters = 0 ;
+		}
+	}
+	
+	/* Actually, In order to reduce the time to hold the global lock,
+	 * we'll try to just add the threads structure into the threads sets, 
+	 * and then we call @pthread_create in the background. 
+	 */
+	for (n=0; n<nthreads; n++) {
+		struct tpool_thread_t *self;
 		
-		/* Reset the thread launcher */
-		if (pool->launcher && pool->launcher == OSPX_pthread_id())
-			pool->launcher = 0;
-		break;
-	case THREAD_STAT_TIMEDOUT: {	
-		int nthreads_pool = XLIST_SIZE(&pool->ths) - pool->nthreads_dying;
-		
-		/* We try to remove the thread from the servering sets 
-		 * if the threads should be stopped providing service.
-		 */	
-		if (!(THREAD_STAT_RM & self->status)) {
-			if ((nthreads_pool > pool->minthreads) && ((!pool->npendings) || pool->paused)) { 
-				status = THREAD_STAT_RM;
-				++ pool->nthreads_dying;
-				-- pool->nthreads_real_pool;
-				self->run = 0;
+		if (list_empty(&pool->freelst)) {
+			self = (struct tpool_thread_t *)malloc(sizeof(*self));
+			if (!self) {
+				errno = ENOMEM;
+				__SHOW_ERR__(__FUNCTION__);
 				break;
 			}
-		}
-		status = THREAD_STAT_FREE;	
-		break;
-	}
-	case THREAD_STAT_FORCE_QUIT: {
-		assert(self->run && !(THREAD_STAT_RM & self->status));
-		status = THREAD_STAT_RM;
-		++ pool->nthreads_dying;
-		-- pool->nthreads_real_pool;
-		self->run = 0;		
-		
-		/* WAIT-->FREE (woke up)-->QUIT */
-		/* We look up the task status before the thread's exiting since we do 
-		 * not know that which thread will be woke up by @tpool_increase_thread
-		 */
-		if (!XLIST_EMPTY(&pool->dispatch_q) || (!pool->paused && pool->npendings))
-			tpool_increase_threads(pool, self);
-		break;
-	}
-	case THREAD_STAT_RUN: 
-		assert(__curtask);		
-#if !defined(NDEBUG) && !defined(_WIN32)
-		if (__curtask->task_name && strlen(__curtask->task_name))
-			prctl(PR_SET_NAME, __curtask->task_name);
-#endif
-		++ pool->nthreads_running;
-		if (THREAD_STAT_RM & self->status) {
-			assert(!self->run);
-			++ pool->nthreads_dying_run;
-		}
-				
-		/* Reset the @ncont_rest_counters */
-		if (self->ncont_rest_counters)
-			self->ncont_rest_counters = 0;
-		/* Try to create more threads to provide services 
-		 * before our's executing the task. 
-		 */
-		if (pool->npendings && (pool->nthreads_waiters || pool->maxthreads > pool->nthreads_real_pool)) 
-			tpool_increase_threads(pool, self);
-			
-		break;
-	case THREAD_STAT_COMPLETE:
-		-- pool->nthreads_running;
-		status = THREAD_STAT_FREE;	
-		
-		if (THREAD_STAT_RM & self->status) {
-			assert(!self->run);
-			-- pool->nthreads_dying_run;
+			INIT_thread_structure(pool, self, 1);	
+		} else {
+			self = list_entry(pool->freelst.next, struct tpool_thread_t, link_free);
+			list_del(&self->link_free);
+			assert(!self->structure_release);
 		}
 
-		/* Has @task_run been executed ? */
-		if (self->task_type & TASK_TYPE_DISPATCHED)
-			++ pool->ntasks_dispatched;
-		else
-			++ pool->ntasks_done;
-#ifndef NDEBUG
-		++ self->ntasks_done;
-#endif			
-		/* We do not need to check @__curtask at present. 
-         * so it is not neccessary to reset it to waste our
-		 * CPU.
+		/* We increase the reference to make sure that 
+		 * the task pool object will always exist before 
+		 * the service thread's exitting.
 		 */
-		//__curtask = NULL;
-		break;
-	case THREAD_STAT_FREE: 
-		break;
-	case THREAD_STAT_LEAVE: 
-		/* Remove current thread from the THREAD queue */
-		XLIST_REMOVE(&pool->ths, &self->link);
-
-		/* Remove current thread from the RM queue */
-		if (THREAD_STAT_RM & self->status) {
-			assert(pool->nthreads_dying > 0 && !self->run);
-			
-			/* Give @tpool_adjust_wait a notification */
-			if (!-- pool->nthreads_dying)
-				OSPX_pthread_cond_broadcast(&pool->cond_ths);
-		} else if (XLIST_EMPTY(&pool->ths))
-			/* Give @tpool_release_ex a notification */
-			OSPX_pthread_cond_broadcast(&pool->cond_ths);
+		tpool_addref_l(pool, 0, dummy_null_lptr);	
+		if (!th) {
+			if ((errno = OSPX_pthread_create(&self->thread_id, 0, tpool_thread_entry, self))) {
+				__SHOW_ERR__("pthread_create error");
+				tpool_release_l(pool, 0, dummy_null_lptr);
+				if (self->structure_release)
+					free(self);
+				else 
+					list_add_tail(&self->link_free, &pool->freelst);
+				break;
+			}
+			#ifndef NDEBUG	
+				fprintf(stderr, "create THREAD:0x%x\n", (int)self);
+			#endif		
+		} else  
+			list_add_tail(&self->link_free, &th->thq);	
 		
-		/* Reset the thread launcher */
-		if (pool->launcher && XLIST_SIZE(&pool->ths) == 1) 
-			pool->launcher = 0;		
-#ifndef NDEBUG
-		fprintf(stderr, "THREAD:%p exits. <ntasks_done:%d status:0x%lx> (@threads_in_pool:%d(%d) @tasks_in_pool:%d)\n", 
-			self, self->ntasks_done, (long)self->status, XLIST_SIZE(&pool->ths), pool->nthreads_real_pool,
-			XLIST_SIZE(&pool->trace_q));
-#endif			
-		break;
+		list_add_tail(&self->link, &pool->ths);
+		++ pool->n_qths;
 	}
-
-	/* Decrease the rest counter */
-	if (THREAD_STAT_WAIT == (self->status & ~THREAD_STAT_INNER)) {	
-		if (!(THREAD_STAT_RM & self->status)) { 
-			assert(pool->nthreads_real_sleeping > 0);
-			-- pool->nthreads_real_sleeping;
-		}
-		
-		/* Remove the thread from the wait queue */
-		XLIST_REMOVE(&pool->ths_waitq, &self->run_link);	
-		
-		/* 1. @OSPX_pthread_cond_signal may wake up more than one sleeping threads 
-		 * 2. Thread is changing status from WAIT to WAIT_TIMEDOUT.
-		 */
-		if (pool->nthreads_waiters > XLIST_SIZE(&pool->ths_waitq))
-			-- pool->nthreads_waiters;
-	}	
-	self->status = status | (self->status & THREAD_STAT_INNER);
+	pool->nthreads_real_pool += n;
 	
-	if (!synchronized)
-		OSPX_pthread_mutex_unlock(&pool->mut);
+	/* Update the statics report */
+	if (pool->nthreads_peak < pool->nthreads_real_pool) 
+		pool->nthreads_peak = pool->nthreads_real_pool;
+	
+	return n;
 }
+
+/* The core algorithms to create threads 
+ *
+ * Almost only a few parts of codes will be run when 
+ * the function is called, Although there are so many
+ * codes in this function, so we mark the function
+ * with inline.
+ */
+static inline void 
+tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {	
+	int64_t ntasks_pending = pool->paused ? pool->n_qdispatch : pool->npendings;
+	
+	/* Check the pool status */
+	if (!ntasks_pending) {
+		pool->launcher = 0;
+		return;
+	} 
+		
+	/* We forbidden the same thread creating working threads continuously */
+	if (pool->launcher) {
+		if ((self && self->thread_id == pool->launcher) ||
+			(!self && OSPX_pthread_id() == pool->launcher)) {
+			pool->launcher = 0;
+			return;
+		}
+		pool->launcher = 0;
+	}
+
+	/* We wake up the sleeping threads */
+	assert(pool->nthreads_waiters >= 0 && 
+		pool->nthreads_waiters <= pool->n_qths_wait);
+	if (!list_empty(&pool->ths_waitq)) {
+		/* Caculate the number of threads who should be woke up to provide services */
+		ntasks_pending -= (pool->nthreads_real_pool + pool->nthreads_going_rescheduling 
+			
+			/* We decrease the number of threads who is running or sleeping */
+			+ pool->nthreads_dying_run - pool->nthreads_running - pool->nthreads_real_sleeping 
+
+			/* We should decrease the number of threads that has been woke up by us */
+			+ pool->n_qths_wait - pool->nthreads_waiters);
+		
+		if (ntasks_pending > 0 && pool->nthreads_waiters >= pool->n_qths_wait) {
+			int nwake = (int)min(ntasks_pending, 3);
+			/* NOTE:
+			 * 		We do not care about which thread will be woke up, we just 
+			 * wake up no more than 3 threads to provide services. so the threads
+			 * should check the pool status again if they are going to exit after 
+			 * its having been woke up.
+			 */
+			if (pool->nthreads_waiters  > nwake) {
+				pool->nthreads_waiters -= nwake;
+				
+				/* We just simply give threads a notification */
+				for (;nwake > 0; --nwake)
+					OSPX_pthread_cond_signal(&pool->cond);
+			} else {
+				pool->nthreads_waiters = 0;
+				OSPX_pthread_cond_broadcast(&pool->cond);
+			}
+			pool->launcher = self ? self->thread_id : OSPX_pthread_id();
+		} 
+		return;
+	}
+	
+	assert(pool->nthreads_running >= pool->nthreads_going_rescheduling &&
+		   pool->nthreads_real_pool <= pool->n_qths);
+	
+	/* Verify the @maxthreads */
+	if (pool->maxthreads > pool->nthreads_real_pool) {
+		int curthreads_pool_free = pool->nthreads_real_pool + pool->nthreads_going_rescheduling 
+			+ pool->nthreads_dying_run - pool->nthreads_running;
+		assert(curthreads_pool_free >= 0);
+		
+		/* Compute the number of threads who should be
+		 * created to provide services */
+		if (curthreads_pool_free < pool->limit_threads_free) {	
+			int n = pool->maxthreads - pool->nthreads_real_pool;
+			/* Compute the number of threads who is should be created
+			 * according to the @limit_threads_free. */
+			int nthreads = pool->limit_threads_free - curthreads_pool_free;	
+			assert(n >= 0);
+			if (n < nthreads)
+				nthreads = n;
+
+			/* Acquire the number of pending tasks */
+			assert(pool->npendings >= pool->n_qdispatch);	
+			ntasks_pending = pool->npendings - pool->n_qdispatch;
+			if (!list_empty(&pool->dispatch_q)) 
+				ntasks_pending += 1;
+			
+			/* Create the service threads propriately according to the 
+			 * threads' status. */
+			n = ntasks_pending - curthreads_pool_free;
+			if (n < nthreads) 
+				nthreads = n;
+
+			if (nthreads > 0) {
+				if (nthreads > pool->limit_threads_create_per_time)
+					nthreads = pool->limit_threads_create_per_time;
+				
+				/* Call tpool_add_threads to create @nthreads threads to 
+				 * provide service */
+				nthreads = tpool_add_threads(pool, self, nthreads, 0);		
+				pool->launcher = self ? self->thread_id : OSPX_pthread_id();
+			}
+		}
+	}	
+}
+

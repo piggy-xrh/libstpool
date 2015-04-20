@@ -254,7 +254,7 @@ const char *OSPX_sys_strerror(uint32_t code) {
 	static size_t wesize = sizeof(winerr)/sizeof(*winerr);
 	
 	if (code >= EXTEND_BASE_ERR) {	
-		int index;
+		size_t index;
 		const char *err = "Unkown";
 
 		for (index=0; index<wesize; ++index) {
