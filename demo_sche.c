@@ -1,3 +1,5 @@
+/*COPYRIGHT (C) 2014 - 2020, piggy_xrh */
+
 #include <stdio.h>
 #include "stpool.h"
 
@@ -5,7 +7,6 @@
 #include <Windows.h>
 #pragma comment(lib, "stpool.lib")
 #define msleep Sleep
-#define random rand
 #else
 #define msleep(x) usleep(x * 1000)
 #endif
@@ -27,7 +28,7 @@ int  task_run(struct sttask_t *ptsk) {
 	 */
 	return 0;
 }
-#include <stdint.h>
+
 int main()
 {
 	time_t now;
@@ -80,7 +81,7 @@ int main()
 	while ('q' != getchar()) {
 		for (i=0; i<40; i++)
 			stpool_add_routine(hp, "debug", task_run, NULL, &sum, NULL);	
-		usleep(20);
+		msleep(1);
 	}
 
 	/* Clear the stdio cache */

@@ -1,3 +1,5 @@
+/*COPYRIGHT (C) 2014 - 2020, piggy_xrh */
+
 #include <stdio.h>
 
 #include "stpool.h"
@@ -6,12 +8,9 @@
 #include <Windows.h>
 #pragma comment(lib, "stpool.lib")
 #define msleep Sleep
-#define random rand
 #else
 #define msleep(x) usleep(x * 1000)
 #endif
-
-/* Email: piggy_xrh@163.com */
 
 static int g_test_reschedule = 0;
 
@@ -94,7 +93,7 @@ int main()
 	int i, error;
 	HPOOL hp;
 	struct schattr_t attr = {
-		0, 1, STPOLICY_PRI_SORT_INSERTBEFORE
+		0, 1, STP_SCHE_TOP
 	};	
 	struct sttask_t *ptsk;
 	

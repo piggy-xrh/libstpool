@@ -1,6 +1,32 @@
 #ifndef __ST_POOL_H__
 #define __ST_POOL_H__
 
+/*
+ *  COPYRIGHT (C) 2014 - 2020, piggy_xrh
+ * 
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ * 
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ *  GNU General Public License for more details.
+ * 
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, write to the Free Software Foundation, Inc.,
+ *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ *	  Stpool is portable and efficient tasks pool library, it can works on diferent 
+ * platforms such as Windows, linux, unix and ARM.  
+ *
+ *    If you have any troubles or questions on using the library, contact me.
+ *
+ * 	  (Email: piggy_xrh@163.com  QQ: 1169732280)
+ * 	  blog: http://www.oschina.net/code/snippet_1987090_44422
+ */
+
 #include <time.h>
 #include <stdlib.h>
 
@@ -14,14 +40,6 @@
 #define EXPORT
 #endif
 
-/* Author: piggy_xrh@163.com 
- *	  Stpool is portable and efficient tasks pool library, it can works on diferent 
- * platforms such as Windows, linux, unix and ARM.  
- *
- *    If you have any troubles or questions on using the library, contact me.
- *
- * 	  ( Email: piggy_xrh@163.com  QQ: 1169732280 )
- */
 typedef void *HPOOL;
 
 /* Error code */
@@ -108,7 +126,7 @@ struct schattr_t {
 	/* The priority of the task */
 	int sche_pri;
 
-	/* The policy to schedule the task (STPOLICY_PRI_SORT_XX) */
+	/* The policy to schedule the task (STP_SCHE_XX) */
 	int sche_pri_policy;
 };
 
@@ -157,12 +175,12 @@ enum {
 	/* Insert our task before the tasks who has the same
 	 * priority exisiting in the pool.
 	 */
-	STPOLICY_PRI_SORT_INSERTBEFORE = 1,
+	STP_SCHE_TOP = 1,
 
     /* Insert our task after the tasks who has the same
 	 * priority exisiting in the pool.
 	 */
-	STPOLICY_PRI_SORT_INSERTAFTER,
+	STP_SCHE_BACK,
 };
 
 /* Status details about the task */
@@ -752,7 +770,7 @@ EXPORT long stpool_wkid();
  */
 EXPORT int stpool_throttle_wait(HPOOL hp, long ms);
 
-/* @stpool_wait(1/2/3/ex)
+/* @stpool_wait(2/3/ex)
  *	  Wait for the tasks' being done in @ms milliseconds. the functions
  * of @stpool_waitex are just the same as @stpool_wait's. and as you see,
  * @stpool_waitex use the callback @sttask_match to find the task. if there 

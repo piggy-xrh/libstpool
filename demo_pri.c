@@ -1,3 +1,5 @@
+/*COPYRIGHT (C) 2014 - 2020, piggy_xrh */
+
 #include <stdio.h>
 
 #include "stpool.h"
@@ -6,7 +8,6 @@
 #include <Windows.h>
 #pragma comment(lib, "stpool.lib")
 #define msleep Sleep
-#define random rand
 #else
 #define msleep(x) usleep(x * 1000)
 #endif
@@ -43,10 +44,10 @@ int main()
 {
 	HPOOL hp;
 	struct schattr_t attr[] = {
-		{0, 90, STPOLICY_PRI_SORT_INSERTBEFORE},
-		{0, 40, STPOLICY_PRI_SORT_INSERTAFTER},
-		{0, 10, STPOLICY_PRI_SORT_INSERTAFTER},
-		{0, 0,  STPOLICY_PRI_SORT_INSERTAFTER},
+		{0, 90, STP_SCHE_TOP},
+		{0, 40, STP_SCHE_BACK},
+		{0, 10, STP_SCHE_BACK},
+		{0, 0,  STP_SCHE_BACK},
 	};
 
 	/* Creat a pool with 1 servering threads */

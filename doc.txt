@@ -38,17 +38,17 @@
  
                pri_q[0]       pri_q[1]      .....        pri_q[10]      (任务池)
            |--------------|--------------|------------|---------------|
-           | tsk9_before  | tsk14_before |   ...      | task99_before |
-           | tsk9_after   | tsk10_after  |            | task99_after  | 
-           | tsk7_after   | tsk9_after   |            | task90_after  |
-           | tsk6_before  |              |            |   ....        |
+           | tsk9_top     | tsk14_top    |   ...      | task99_top    |
+           | tsk9_back    | tsk10_back   |            | task99_back   | 
+           | tsk7_back    | tsk9_back    |            | task90_back   |
+           | tsk6_top     |              |            |   ....        |
            |  .........   |              |            |               |
-           | tsk0_before  |              |            |               |
-           | tsk0_after   |              |            |               |
+           | tsk0_top     |              |            |               |
+           | tsk0_back    |              |            |               |
            |--------------|--------------|------------|---------------|
 
-   tskX_Y (X表示优先级, Y表示策略),比如 tsk9_before表示task的优先级为9，使用的是
-          STPOLICY_PRI_SORT_INSERTBEFORE策略排序,见stpool.h头文件
+   tskX_Y (X表示优先级, Y表示策略),比如 tsk9_top表示task的优先级为9，使用的是
+          STP_SCHE_TOP 策略排序,见stpool.h头文件
 
    pri_q[x] 表示优先级队列(图示展示的为10个, 其数目可由用户在使用@stpool_create创建线程池是根据
             情况创建,每个队列将容纳100/pri_q_num个优先级的任务. (比如如果pri_q_num为1，则只有一个
@@ -58,7 +58,7 @@
             越先被调度,所以如上图中, 当pri_q[10] ~ pri_q[1]的任务全部调度完毕后,pri_q[0]中的任务
             才开始被调度，
 
-    @stpool_add_task)/@stpool_add_pri_task往任务池中添加任务. threadManager线程池管理器
+    @stpool_add_task)/@stpool_add_routine往任务池中添加任务. threadManager线程池管理器
 根据任务池中的任务状况和系统负载和当前任务执行情况来启动合适数量的线程池来执行任务. taskScheduler
 负责从任务池中选中任务来派发给wokingThread工作线程来执行任务.
 
@@ -151,7 +151,7 @@
       #附录1
           model:
             任务加入到一个线程池中时，其任务对象内部有一个trace_link成员会被任务池用来记录连接信息,
-       正常情况下当任务对象的task_run和task_complete被执行完毕或者任务被移除导致只调用task_complete执行
+       正常情况下当任务对象的task_run和task_complete被执行完毕或者任务被移除导致task_complete执行
        完毕后, pool才会将任务对象的trace_link记录清空,这个时候任务对象就是自由的，完全脱离了线程池.
 
             可以在task_run或task_complete中调用stpool_detach_task强制让线程池来清空trace_link记录,这个时候

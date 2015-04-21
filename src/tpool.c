@@ -1,3 +1,29 @@
+/*
+ *  COPYRIGHT (C) 2014 - 2020, piggy_xrh
+ * 
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ * 
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ *  GNU General Public License for more details.
+ * 
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, write to the Free Software Foundation, Inc.,
+ *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ *	  Stpool is portable and efficient tasks pool library, it can works on diferent 
+ * platforms such as Windows, linux, unix and ARM.  
+ *
+ *    If you have any troubles or questions on using the library, contact me.
+ *
+ * 	  (Email: piggy_xrh@163.com  QQ: 1169732280)
+ * 	  blog: http://www.oschina.net/code/snippet_1987090_44422
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -1184,7 +1210,7 @@ tpool_mark_task_ex(struct tpool_t *pool,
 		list_splice(&pool_q, &pool->dispatch_q);
 		pool->n_qdispatch += n_qdispatch;
 		
-		/* Wake up threads to schedule the callback */
+		/* Wake up threads to schedule the callbacks */
 		tpool_increase_threads(pool, NULL);
 	}
 		
@@ -1846,12 +1872,6 @@ tpool_pending_leq_wait(struct tpool_t *pool,  int n_max_pendings, long ms) {
 	} while (0)
 
 
-#ifndef __cplusplus 
-#ifdef _WIN32
-#define inline __inline
-#endif
-#endif
-
 static inline void 
 tpool_thread_status_change(struct tpool_t *pool, struct tpool_thread_t *self, uint16_t status, int synchronized) {	
 	if (!synchronized)
@@ -2238,7 +2258,7 @@ static void
 tpool_task_complete(struct tpool_t *pool, struct tpool_thread_t *self, struct task_t *ptsk, int task_code) {	
 	assert(self || ptsk->task_complete);
 
-	/* Call the complete routine to dispatch the result */
+	/* Call the completition routine to dispatch the result */
 	if (self) {
 		if (self->task_complete) {
 			long vmflags = (TASK_TYPE_DISPATCHED & self->task_type) ?
