@@ -332,7 +332,7 @@ int OSPX_pthread_mutex_init(OSPX_pthread_mutex_t *mut, int recursive)  {
 	if (recursive) {
 		if ((errno = pthread_mutexattr_init(&xattr)))
 			return errno;
-		
+	
 		if ((errno = pthread_mutexattr_settype(&xattr, PTHREAD_MUTEX_RECURSIVE))) {
 			pthread_mutexattr_destroy(&xattr);
 			return errno;
@@ -480,6 +480,9 @@ int OSPX_pthread_cond_timedwait(OSPX_pthread_cond_t *cond, OSPX_pthread_mutex_t 
 		error = pthread_cond_wait(cond, mut);
 #endif	
 	
+	/* @FIX me: Caculate the left timeo value 
+	 *     We can get the left timeo accurately by the tick-clock
+	 */
 	if (to && *to > 0) {	
 		uint64_t utime0, utime1;
 

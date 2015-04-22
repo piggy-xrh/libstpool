@@ -232,9 +232,12 @@ struct tpool_thread_t {
 #ifndef NDEBUG	
 	uint32_t ntasks_done; 
 #endif	
+	/* The last timeo value to wait for tasks */
+	long last_to;
+
 	/* The rest counter */
 	uint16_t ncont_rest_counters;
-
+	
 	/* The current task that the thread is servering for. */
 	uint8_t  task_type;  
 	uint8_t  detached;

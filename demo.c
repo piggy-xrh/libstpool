@@ -1,4 +1,4 @@
-/*COPYRIGHT (C) 2014 - 2020, piggy_xrh */
+/* COPYRIGHT (C) 2014 - 2020, piggy_xrh */
 
 #include <stdio.h>
 

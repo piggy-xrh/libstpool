@@ -1,4 +1,4 @@
-/*COPYRIGHT (C) 2014 - 2020, piggy_xrh */
+/* COPYRIGHT (C) 2014 - 2020, piggy_xrh */
 
 #include <stdio.h>
 #include "stpool.h"
@@ -44,12 +44,13 @@ int main()
 	printf("%s\n", stpool_status_print(hp, NULL, 0));
 		
 	/* Add tasks */
-	times = 90000;	
+	times = 90;//0000;	
 	arg = (int *)malloc(times * sizeof(int));
 	for (i=0; i<times; i++) {
-		/* It'll take a long time if the program is linked with the debug library */
+		/* It may take a long time to load a large amount of tasks 
+		 * if the program is linked with the debug library */
 		if (i % 4000 == 0 || (i + 1) ==times) {
-			printf("\rLoading tasks ... %.2f%%  ", (float)i * 100/ times);
+			printf("\rLoading ... %.2f%%  ", (float)i * 100/ times);
 			fflush(stdout);
 		}
 		arg[i] = i;

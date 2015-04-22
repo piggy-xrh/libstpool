@@ -1,4 +1,4 @@
-/*COPYRIGHT (C) 2014 - 2020, piggy_xrh */
+/* COPYRIGHT (C) 2014 - 2020, piggy_xrh */
 
 #include <stdio.h>
 
@@ -28,7 +28,6 @@ void task_complete(struct sttask_t *ptsk, long vmflags, int task_code) {
 	printf("vmflags:%ld task_code:%p [%s-%d]\n", 
 		vmflags, (void *)task_code, ptsk->task_name, attr.sche_pri);
 	
-	
 	/* Reschedule the task if the task has been done successfully */
 	if (STTASK_VMARK_DONE & vmflags) {
 		int err = stpool_add_task(ptsk->hp_last_attached, ptsk);	
@@ -55,10 +54,10 @@ int main()
 	printf("%s\n", stpool_status_print(hp, NULL, 0));
 		
 	/* Add a task with zero priority */
-	stpool_add_routine(hp, "hight_task", task_run, task_complete, NULL, &attr[0]);
-	stpool_add_routine(hp, "middle_task", task_run, task_complete, NULL, &attr[1]);
-	stpool_add_routine(hp, "low_task", task_run, task_complete, NULL, &attr[2]);
 	stpool_add_routine(hp, "zero_task", task_run, task_complete, NULL, &attr[3]);
+	stpool_add_routine(hp, "low_task", task_run, task_complete, NULL, &attr[2]);
+	stpool_add_routine(hp, "middle_task", task_run, task_complete, NULL, &attr[1]);
+	stpool_add_routine(hp, "hight_task", task_run, task_complete, NULL, &attr[0]);
 	
 	/* Wake up the pool to run the tasks */
 	stpool_resume(hp);
