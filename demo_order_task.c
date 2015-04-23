@@ -50,10 +50,15 @@ int task_wrapper_run(struct sttask_t *ptsk) {
 void task_wrapper_complete(struct sttask_t *ptsk, long vmflags, int task_code) {
 	struct my_wrapper_task *wrapper = 
 		container_of(ptsk, struct my_wrapper_task, self);
-	
+	struct sttask_t *current = wrapper->entry[wrapper->last_task_index];
+		
+	/* Run current task's completion routine */
+	if (current->task_complete)
+		current->task_complete(current, vmflags, task_code);
+
 	/* Record the error code */
 	wrapper->last_task_code = task_code;
-
+	
 	if (STTASK_VMARK_DONE & vmflags) {
 		struct schattr_t attr;
 		struct sttask_t *next;
