@@ -7,7 +7,7 @@ CC    :=$(CROSS)gcc
 AR    :=$(CROSS)ar
 STRIP :=$(CROSS)strip
 
-TARGET  :=libstpool.a libstpool.so  demo demo_pri demo_sche
+TARGET  :=libstpool.a libstpool.so  demo demo_pri demo_sche demo_order_task
 OBJS_tpool :=stpool.o tpool.o ospx.o  ospx_error.o mpool.o
 OBJS_DIR :=.obj
 VPATH =.:src
@@ -15,9 +15,9 @@ VPATH =.:src
 #Thanks for @pengjiasi: 
 #       The GCC option -fPIC should be set at the compiling step.
 
-#CFLAGS  =-Isrc -s -O2 -DNDEBUG -D_GNU_SOURCE -fPIC 
+CFLAGS  =-Isrc -s -O2 -DNDEBUG -D_GNU_SOURCE -fPIC 
 
-CFLAGS  =-Isrc -g -D_GNU_SOURCE -fPIC
+#CFLAGS  =-Isrc -g -D_GNU_SOURCE -fPIC
 
 ARFLAGS = -rv
 STRIPFLAGS = -xXg
@@ -48,7 +48,7 @@ demo_pri:demo_pri.o libstpool.a
 demo_sche:demo_sche.o libstpool.a 
 	$(CC) $(CFLAGS) -o$@ $^ -lpthread -lrt
 
-demo_filter:demo_filter.o libstpool.a 
+demo_order_task:demo_order_task.o libstpool.a 
 	$(CC) $(CFLAGS) -o$@ $^ -lpthread -lrt
 
 
