@@ -147,7 +147,7 @@ tpool_delete_task(struct tpool_t *pool, struct task_t *ptsk) {
 
 static long tpool_release_ex(struct tpool_t *pool, int decrease_user, int wait_threads_on_clean);
 static void tpool_add_task_l(struct tpool_t *pool, struct task_t *ptsk);
-static inline int  tpool_add_threads(struct tpool_t *pool, struct tpool_thread_t *th, int nthreads, long lflags); 
+static int  tpool_add_threads(struct tpool_t *pool, struct tpool_thread_t *th, int nthreads, long lflags); 
 static inline void tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self);
 static void tpool_schedule(struct tpool_t *pool, struct tpool_thread_t *self);
 static void tpool_task_complete(struct tpool_t *pool, struct tpool_thread_t *self, struct task_t *ptsk, int task_code); 
@@ -190,7 +190,11 @@ static int
 tpool_GC_run(struct task_t *ptsk) {
 	struct task_t *obj;
 	struct tpool_t *pool = ptsk->task_arg;
-	
+
+#if !defined(NDEBUG) && !defined(_WIN32)
+	prctl(PR_SET_NAME, ptsk->task_name);
+#endif
+
 	while (!list_empty(&pool->gcq)) {
 		obj = list_entry(pool->gcq.next, struct task_t, wait_link);
 		list_del(&obj->wait_link);
@@ -201,13 +205,12 @@ tpool_GC_run(struct task_t *ptsk) {
 		else
 			free(obj);
 	}
-
+	
 	/* Reset the GC owner */
 	pool->GC = NULL;
 
 	return 0;
 }
-
 
 void 
 tpool_task_setschattr(struct task_t *ptsk, struct xschattr_t *attr) {
@@ -1121,7 +1124,7 @@ tpool_mark_task(struct tpool_t *pool, struct task_t *ptsk, long lflags) {
 					ptsk->f_stat = TASK_STAT_DISPATCHING;
 				}
 				
-				/* Try to give a notification to @tpool_free_wait */
+				/* Try to give a notification to @tpool_pending_leq_wait */
 				if (pool->npendings_ev >= pool->npendings)
 					OSPX_pthread_cond_broadcast(&pool->cond_ev);
 			}
@@ -1218,6 +1221,10 @@ tpool_mark_task_ex(struct tpool_t *pool,
 		
 	if (!list_empty(&no_callback_q)) 
 		tpool_task_complete_nocallback_l(pool, &no_callback_q);	
+		
+	/* Try to give a notification to @tpool_pending_leq_wait */
+	if (pool->npendings_ev >= pool->npendings)
+		OSPX_pthread_cond_broadcast(&pool->cond_ev);	
 	assert(pool->npendings >= pool->n_qdispatch);
 	OSPX_pthread_mutex_unlock(&pool->mut);
 		
@@ -2054,7 +2061,20 @@ tpool_gettask(struct tpool_t *pool, struct tpool_thread_t *self) {
 		/* Try to free the objects */
 		if (!pool->GC && !list_empty(&pool->clq)) {
 			pool->GC  = self;
-			list_splice_init(&pool->clq, &pool->gcq);
+			if (list_is_singular(&pool->clq) || !(POOL_F_CREATED & pool->status))
+				list_splice_init(&pool->clq, &pool->gcq);
+			else {
+				int ele = 0;
+				struct list_head *pos;
+				
+				/* We just free 80 objects at a time to avoid this
+				 * task taking our too much time */
+				list_for_each(pos, &pool->clq) {
+					if (80 == ++ ele)
+						break;
+				}
+				list_cut_position(&pool->gcq, &pool->clq, pos);
+			}
 			__curtask = &pool->sys_GC_task;
 			__curtask->th = self;
 			self->task_type = TASK_TYPE_GC;
@@ -2155,7 +2175,7 @@ tpool_thread_entry(void *arg) {
 	return 0;
 }
 
-static inline void
+static void
 thcreater_exception_handler(struct tpool_thread_t *self) {
 	int release;
 	struct tpool_thread_t *th;
@@ -2345,7 +2365,7 @@ tpool_task_complete(struct tpool_t *pool, struct tpool_thread_t *self, struct ta
 }
 
 
-static inline int
+static int
 tpool_add_threads(struct tpool_t *pool, struct tpool_thread_t *th, int nthreads, long lflags /* reserved */) {
 	int n;
 	
@@ -2361,7 +2381,6 @@ tpool_add_threads(struct tpool_t *pool, struct tpool_thread_t *th, int nthreads,
 			assert(!th->run);
 			th->run = 1;
 			th->status &= ~THREAD_STAT_RM;
-			th->status |= lflags;
 
 			switch (th->status & ~THREAD_STAT_INNER) {
 			case THREAD_STAT_RUN:

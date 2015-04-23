@@ -15,9 +15,9 @@ VPATH =.:src
 #Thanks for @pengjiasi: 
 #       The GCC option -fPIC should be set at the compiling step.
 
-CFLAGS  =-Isrc -s -O2 -DNDEBUG -D_GNU_SOURCE -fPIC 
+#CFLAGS  =-Isrc -s -O2 -DNDEBUG -D_GNU_SOURCE -fPIC 
 
-#CFLAGS  =-Isrc -g -D_GNU_SOURCE -fPIC
+CFLAGS  =-Isrc -g -D_GNU_SOURCE -fPIC
 
 ARFLAGS = -rv
 STRIPFLAGS = -xXg
@@ -32,12 +32,12 @@ PREPARE:
 
 libstpool.a:$(addprefix $(OBJS_DIR)/, $(OBJS_tpool)) 
 	$(AR) $(ARFLAGS) $@ $^ 
-	#$(STRIP) $(STRIPFLAGS) $@
+	$(STRIP) $(STRIPFLAGS) $@
 	chmod +x $@
 
 libstpool.so:$(addprefix $(OBJS_DIR)/, $(OBJS_tpool)) 
 	$(CC) --shared -o$@ $^
-	#$(STRIP) $(STRIPFLAGS) $@
+	$(STRIP) $(STRIPFLAGS) $@
 
 demo:demo.o libstpool.a 
 	$(CC) $(CFLAGS) -o$@ $^ -lpthread -lrt
