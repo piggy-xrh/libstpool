@@ -44,7 +44,7 @@ int main()
 	printf("%s\n", stpool_status_print(hp, NULL, 0));
 		
 	/* Add tasks */
-	times = 90;//0000;	
+	times = 900000;
 	arg = (int *)malloc(times * sizeof(int));
 	for (i=0; i<times; i++) {
 		/* It may take a long time to load a large amount of tasks 
@@ -82,7 +82,6 @@ int main()
 	while ('q' != getchar()) {
 		for (i=0; i<40; i++)
 			stpool_add_routine(hp, "debug", task_run, NULL, &sum, NULL);	
-		msleep(1);
 	}
 
 	/* Clear the stdio cache */

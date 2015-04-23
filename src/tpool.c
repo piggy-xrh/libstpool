@@ -465,10 +465,10 @@ tpool_free(struct tpool_t *pool) {
 	
 	/* Free the memory pool */
 	if (pool->mp) {
-#ifndef NDEBUG
+//#ifndef NDEBUG
 		fprintf(stderr, "-----MP----\n%s\n",
 			mpool_stat_print(pool->mp, NULL, 0));
-#endif	
+//#endif	
 		mpool_destroy(pool->mp, 1);
 		free(pool->mp);
 	}
@@ -1450,7 +1450,7 @@ out:
 	 */
 	if ((pool->n_qths + pool->nthreads_going_rescheduling) ==
 		(pool->nthreads_waiters + pool->nthreads_running) &&	
-		pool->maxthreads > pool->nthreads_real_pool &&
+		pool->maxthreads >= pool->nthreads_real_pool &&
 		!pool->paused) 
 		tpool_increase_threads(pool, NULL);		
 
@@ -1954,7 +1954,7 @@ tpool_thread_status_change(struct tpool_t *pool, struct tpool_thread_t *self, ui
 		 */
 		if ((pool->n_qths + pool->nthreads_going_rescheduling) ==
 			(pool->nthreads_waiters + pool->nthreads_running) &&
-			pool->maxthreads > pool->nthreads_real_pool && 
+			pool->maxthreads >= pool->nthreads_real_pool && 
 			pool->npendings) 
 			tpool_increase_threads(pool, self); 
 		break;
@@ -2196,25 +2196,22 @@ thcreater_exception_handler(struct tpool_thread_t *self) {
 
 static inline void
 do_create_threads(struct tpool_thread_t *self) {
-	int error = 0;
-
 	/* Do pthread_create here */
 	while (!list_empty(&self->thq)) {
 		struct tpool_thread_t *th = list_entry(self->thq.next, 
 					struct tpool_thread_t, link_free);
 		
-		list_del(&th->link_free);	
-		if ((error = OSPX_pthread_create(&th->thread_id, 0, tpool_thread_entry, th))) {
+		if ((errno = OSPX_pthread_create(&th->thread_id, 0, tpool_thread_entry, th))) {
 			__SHOW_ERR__("pthread_create error");
-			list_add_tail(&th->link_free, &self->thq);
 			break;
 		}
+		list_del(&th->link_free);	
 		#ifndef NDEBUG	
 			fprintf(stderr, "create THREAD:0x%p\n", th);
 		#endif		
 	}
 
-	if (error)
+	if (errno)
 		thcreater_exception_handler(self);
 }
 

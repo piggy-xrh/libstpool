@@ -52,7 +52,7 @@ int main()
 	/* Creat a pool with 1 servering threads */
 	hp = stpool_create(1, 0, 1, 1);
 	printf("%s\n", stpool_status_print(hp, NULL, 0));
-		
+	
 	/* Add a task with zero priority */
 	stpool_add_routine(hp, "zero_task", task_run, task_complete, NULL, &attr[3]);
 	stpool_add_routine(hp, "low_task", task_run, task_complete, NULL, &attr[2]);

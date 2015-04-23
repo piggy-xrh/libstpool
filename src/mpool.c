@@ -29,8 +29,13 @@
 #include "list.h"
 #include "mpool.h"
 
+/* The object pool can process almost 100,000 objects fastly.
+ * But if the objects number is much more than 100,000, maybe 
+ * we should use rbtree to store the objects. 
+ */
+
 struct mpool_blk_t {
-	struct  hlist_node link;
+	struct  list_head  link;
 	struct  hlist_node base_link;
 	uint8_t  slot;
 	uint16_t u16_num;
@@ -45,7 +50,7 @@ struct mpool_blk_t {
 };
 
 struct mpool_init_data_t {
-	struct hlist_head mq;
+	struct list_head  mq;
 	struct hlist_head *mbase;
 	size_t *mqnarray;
 	size_t mbnum;
@@ -59,7 +64,7 @@ struct mpool_obj_ptr_t {
 	uint8_t f_resv:1;
 };
 
-#define PAGE_SIZE (1024 * 4)
+#define PAGE_SIZE (1024 * 8)
 #define MPOOL_data(mp) ((struct mpool_init_data_t *)mp->init_data)
 
 #define ACQUIRE_LOCK(mp) OSPX_pthread_mutex_lock(&MPOOL_data(mp)->lock)
@@ -68,12 +73,12 @@ int
 mpool_init(struct mpool_t *mp, size_t objlen) {
 	size_t i;
 	struct mpool_init_data_t *initd;
-
+	
 	assert(objlen > 0);
 	mp->align  = 4 - objlen % 4;
 	mp->objlen = mp->align + objlen;
 	initd = (struct mpool_init_data_t *)calloc(1, sizeof(*initd) + 
-		6 * (sizeof(struct hlist_head) + sizeof(size_t)));
+		25 * (sizeof(struct hlist_head) + sizeof(size_t)));
 	if (!initd) {
 		fprintf(stderr, "@%s error:Out of memeory.\n",
 			__FUNCTION__);
@@ -87,10 +92,10 @@ mpool_init(struct mpool_t *mp, size_t objlen) {
 	}
 	initd->left = 0;
 	initd->nacquires = 0;
-	initd->mbnum = 6;
+	initd->mbnum = 25;
 	initd->mbase = (struct hlist_head *)(initd + 1);
 	initd->mqnarray = (size_t *)(initd->mbase + initd->mbnum);
-	INIT_HLIST_HEAD(&initd->mq);
+	INIT_LIST_HEAD(&initd->mq);
 	for (i=0; i<initd->mbnum; i++) 
 		INIT_HLIST_HEAD(&initd->mbase[i]);
 	mp->init_data = (void *)initd;
@@ -118,7 +123,7 @@ mpool_new_blk(struct mpool_t *mp, void *buffer, size_t size, mbuffer_free mfree)
 			__FUNCTION__);
 		return NULL;
 	}
-	
+
 	if (!buffer) {
 		/* Reset the size */
 		size   = nobjs * mp->objlen;
@@ -150,12 +155,17 @@ mpool_new_blk(struct mpool_t *mp, void *buffer, size_t size, mbuffer_free mfree)
 	ACQUIRE_LOCK(mp);
 	elements = initd->mqnarray[0];
 	nblk->slot = 0;
-	for (i=1; i<initd->mbnum; i++){
+
+	/* We balance the hash table */
+	for (i=1; elements && i< initd->mbnum; i++) {
 		if (elements > initd->mqnarray[i]) {
 			elements = initd->mqnarray[i];
 			nblk->slot = i;
 		}
 	}
+
+	/* The store the bucket index into the objects to 
+	 * speed the query process */
 	for (i=0; i<nobjs; i++) {
 		optr = (struct mpool_obj_ptr_t *)((uint8_t *)nblk->base + i * mp->objlen);
 		optr->f_slot = nblk->slot;
@@ -181,10 +191,23 @@ mpool_new_blk(struct mpool_t *mp, void *buffer, size_t size, mbuffer_free mfree)
 			hlist_add_after(last, &nblk->base_link);
 	}	
 	++ initd->mqnarray[nblk->slot];
-	
-	/* Put the block into the free buffer queue */
-	hlist_add_head(&nblk->link, &initd->mq);
 	initd->left += nblk->left;
+	
+	/* Put the block into the free buffer queue 
+	 *  (The free buffer queue is sorted according to the left
+	 * objs by ascending order)
+	 */
+	if (list_empty(&initd->mq))
+		list_add(&nblk->link, &initd->mq);
+	else {
+		list_for_each_entry_reverse(iter, &initd->mq, struct mpool_blk_t, link) {
+			if (nblk->left >= iter->left) {
+				list_add(&nblk->link, &iter->link);
+				return nblk;
+			}
+		}
+		list_add_tail(&nblk->link, &initd->mq);
+	}
 
 	return nblk;
 }
@@ -259,9 +282,8 @@ mpool_new(struct mpool_t *mp) {
 	struct mpool_init_data_t *initd = MPOOL_data(mp);
 
 	ACQUIRE_LOCK(mp);
-	if (!hlist_empty(&initd->mq)) 
-		blk = hlist_entry(initd->mq.first, struct mpool_blk_t, link);
-	
+	if (!list_empty(&initd->mq)) 
+		blk = list_entry(initd->mq.next, struct mpool_blk_t, link);
 	++ initd->nacquires;
 	
 	/* We try to create a new blok if there are none
@@ -288,8 +310,10 @@ mpool_new(struct mpool_t *mp) {
 	OSPX_bitset(blk->bitmap, blk->freeslot);
 	
 	if (!-- blk->left) 
-		hlist_del(&blk->link);
+		list_del(&blk->link);
 	else {
+		struct mpool_blk_t *pos = blk;
+		
 		++ blk->freeslot;
 		
 		if ((blk->freeslot > blk->num) || OSPX_bitget(blk->bitmap, blk->freeslot)) { 
@@ -320,6 +344,15 @@ mpool_new(struct mpool_t *mp) {
 			}
 			assert(num <= index);
 		}
+
+		/* Move the blocks forward */
+		list_for_each_entry_continue_reverse(pos, &initd->mq, 
+				struct mpool_blk_t, link) {
+			if (blk->left <= pos->left) {
+				list_move_tail(&blk->link, &pos->link);	
+				break;	
+			}
+		}
 	}		
 	-- initd->left;
 	//assert_ptr(mp, ptr, 1, __FUNCTION__, __LINE__);
@@ -334,7 +367,7 @@ mpool_delete(struct mpool_t *mp, void *ptr) {
 	struct mpool_obj_ptr_t *optr = (struct mpool_obj_ptr_t *)((uint8_t *)ptr - mp->align);
 	struct mpool_init_data_t *initd = MPOOL_data(mp);
 	struct hlist_node *pos;
-	struct mpool_blk_t *blk;
+	struct mpool_blk_t *blk, *pre;
 	
 	if ((!ptr) || optr->f_resv) {
 		assert(0);
@@ -357,18 +390,32 @@ mpool_delete(struct mpool_t *mp, void *ptr) {
 			OSPX_bitclr(blk->bitmap, blk->freeslot);
 			
 			++ blk->left;
-			if (1 == blk->left) 
-				hlist_add_head(&blk->link, &initd->mq);
-
-			/* Should we release the block ? */
-			else if ((blk->left == blk->num) && (initd->left >= (blk->left + 5))) {	
-				hlist_del(&blk->link);
-				hlist_del(&blk->base_link);
-				release = 1;
-				initd->left -= blk->left;
-				-- initd->mqnarray[blk->slot];
-			}
 			++ initd->left;
+			if (1 == blk->left) 
+				list_add(&blk->link, &initd->mq);
+
+			else if (blk->left == blk->num) {
+				release = (initd->left >= (blk->left + 5));
+				
+				/* Should we release the block ? */
+				if (release) {
+					list_del(&blk->link);
+					hlist_del(&blk->base_link);
+					initd->left -= blk->left;
+					-- initd->mqnarray[blk->slot];
+				} else {
+					struct mpool_blk_t *pos = blk;
+
+					/* Move the blocks backward */
+					list_for_each_entry_continue(pos, &initd->mq, 
+							struct mpool_blk_t, link) {
+						if (blk->left <= pos->left) { 
+							list_move(&blk->link, &pos->link);	
+							break;		
+						}
+					}
+				}
+			}
 			assert_ptr(mp, optr, 0, __FUNCTION__, __LINE__);
 			break;
 		}
@@ -493,7 +540,7 @@ mpool_destroy(struct mpool_t *mp, int force) {
 	if (release) {
 		size_t index;
 
-		for (index=0;index<initd->mbnum; index++) {
+		for (index=0; index<initd->mbnum; index++) {
 			struct hlist_head *hlst = &initd->mbase[index];
 			
 			hlist_for_each_entry_safe(blk, pos, n, hlst,

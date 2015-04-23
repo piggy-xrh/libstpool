@@ -378,7 +378,7 @@
                   STPOOL_ERR_DESTROYING
                   STPOOL_ERR_NOCREATED
                   STPOOL_ERR_THROTTLE
-                  STPOOL_TASK_ERR_BUSY
+                  STPOOL_TASK_ERR_NOMEM
 
    15. void stpool_detach_task(HPOOL hp, struct sttask_t *ptsk);
    16. long stpool_gettskstat(HPOOL hp, struct stpool_tskstat_t *stat);

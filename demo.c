@@ -1,7 +1,6 @@
 /* COPYRIGHT (C) 2014 - 2020, piggy_xrh */
 
 #include <stdio.h>
-
 #include "stpool.h"
 
 #ifdef _WIN32
@@ -38,7 +37,7 @@ void task_complete(struct sttask_t *ptsk, long vmflags , int task_code) {
 		
 	if (g_test_reschedule) {
 		struct schattr_t attr;
-		/* We can adjust the task's priority */
+		/* We adjust the task's priority */
 		stpool_task_getschattr(ptsk, &attr);
 		if (!attr.permanent) {
 			attr.permanent = 1;
@@ -166,7 +165,7 @@ int main()
 	/******************************************************************/
 	/****************Test rescheduling task****************************/
 	/******************************************************************/
-	printf("\nPress any key to test reschedule task. <then press key to stop testing.>\n");
+	printf("\nPress any key to test rescheduling task. <then press key to stop testing.>\n");
 	getchar();
 	g_test_reschedule = 1;
 	stpool_add_task(hp, ptsk);
