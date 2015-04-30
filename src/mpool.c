@@ -254,10 +254,10 @@ assert_ptr(struct mpool_t *mp, struct mpool_obj_ptr_t *ptr, int allocated, const
 				
 			PASSERT(offset % mp->objlen == 0);
 			if (allocated) {
-				PASSERT(OSPX_bitget(blk->bitmap, (offset / mp->objlen + 1)));
+				PASSERT(BIT_get(blk->bitmap, (offset / mp->objlen + 1)));
 				PASSERT((blk->left >= 0) && (blk->left < blk->num));	
 			} else {
-				PASSERT(!OSPX_bitget(blk->bitmap, (offset / mp->objlen + 1)));
+				PASSERT(!BIT_get(blk->bitmap, (offset / mp->objlen + 1)));
 				PASSERT((blk->left > 0) && (blk->left <= blk->num));
 			}
 			break;
@@ -298,7 +298,7 @@ mpool_new(struct mpool_t *mp) {
 	}
 	/* Get a obj from the block */
 	assert(blk->left > 0 && (blk->freeslot >= 1 && blk->freeslot <= blk->num));
-	assert(!OSPX_bitget(blk->bitmap, blk->freeslot));
+	assert(!BIT_get(blk->bitmap, blk->freeslot));
 
 	ptr = (struct mpool_obj_ptr_t *)((uint8_t *)blk->base + (blk->freeslot-1) * mp->objlen);
 	
@@ -307,7 +307,7 @@ mpool_new(struct mpool_t *mp) {
 	 */
 	//assert_ptr(mp, ptr, 0, __FUNCTION__, __LINE__);
 	
-	OSPX_bitset(blk->bitmap, blk->freeslot);
+	BIT_set(blk->bitmap, blk->freeslot);
 	
 	if (!-- blk->left) 
 		list_del(&blk->link);
@@ -316,7 +316,7 @@ mpool_new(struct mpool_t *mp) {
 		
 		++ blk->freeslot;
 		
-		if ((blk->freeslot > blk->num) || OSPX_bitget(blk->bitmap, blk->freeslot)) { 
+		if ((blk->freeslot > blk->num) || BIT_get(blk->bitmap, blk->freeslot)) { 
 			int index = 0, nth_base = -1, num;
 			uint8_t  *u8;
 			uint16_t *u16 = (uint16_t *)blk->bitmap;
@@ -337,7 +337,7 @@ mpool_new(struct mpool_t *mp) {
 
 			/* Get the free slot */
 			for (num=1; num <= index; num++) {
-				if (!OSPX_bitget(u8, num)) {
+				if (!BIT_get(u8, num)) {
 					blk->freeslot = nth_base + num;
 					break;
 				}
@@ -387,7 +387,7 @@ mpool_delete(struct mpool_t *mp, void *ptr) {
 		if ((size_t)optr >= (size_t)blk->base) {
 			/* Set the bitmap */
 			blk->freeslot = ((size_t)optr - (size_t)blk->base) / mp->objlen + 1;
-			OSPX_bitclr(blk->bitmap, blk->freeslot);
+			BIT_clr(blk->bitmap, blk->freeslot);
 			
 			++ blk->left;
 			++ initd->left;

@@ -54,16 +54,17 @@ extern "C" {
 EXPORT int  OSPX_library_init(long lflags);
 EXPORT void OSPX_library_end();
 
-/* i <1~x> */
-#define OSPX_bitset(address, i) (((uint8_t *)address)[(i + 7)/8 -1] |= ((uint8_t)1 << (i-1)%8))
-#define OSPX_bitget(address, i) (((uint8_t *)address)[(i + 7)/8 -1] & ((uint8_t)1 << (i-1)%8))
-#define OSPX_bitclr(address, i) (((uint8_t *)address)[(i + 7)/8 -1] &= ~((uint8_t)1 << (i-1)%8))
-
 /* Thread */
 EXPORT int OSPX_pthread_create(OSPX_pthread_t *handle, int joinable, int (*routine)(void *arglst), void *arglst);
 EXPORT int OSPX_pthread_join(OSPX_pthread_t handle, int *ret);
 EXPORT int OSPX_pthread_detach(OSPX_pthread_t handle);
 EXPORT OSPX_pthread_t OSPX_pthread_self();
+
+/* i <1~x> */
+#define BIT_set(address, i) (((uint8_t *)address)[(i + 7)/8 -1] |= ((uint8_t)1 << (i-1)%8))
+#define BIT_get(address, i) (((uint8_t *)address)[(i + 7)/8 -1] & ((uint8_t)1 << (i-1)%8))
+#define BIT_clr(address, i) (((uint8_t *)address)[(i + 7)/8 -1] &= ~((uint8_t)1 << (i-1)%8))
+
 
 /* Thread ID */
 #ifndef _WIN32

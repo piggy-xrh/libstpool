@@ -100,13 +100,13 @@ int main()
 	wrapper->entry[1] = taskB;
 	wrapper->entry[2] = taskC;
 	
-	/* Clone the schedulint attribute */
+	/* Clone the scheduling attribute */
 	stpool_task_getschattr(wrapper->entry[0], &attr0);
 	stpool_task_init(wrapper->self, "wrapper", task_wrapper_run, task_wrapper_complete, NULL);
 	stpool_task_setschattr(wrapper->self, &attr0);
 
 	/* Create a task pool */
-	hp = stpool_create(1, 1, 1, 1);
+	hp = stpool_create(1, 0, 1, 1);
 
 	/* Add tasks into the pool 
 	 *

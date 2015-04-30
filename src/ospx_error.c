@@ -61,9 +61,9 @@ struct forcomplier {
 #define RWLOCK_RELEASE(ctx)         0
 #endif
 
-#define OSPX_m_isfree(m) (!OSPX_bitget(ospx_ectx.ectx_bitmap, m+1))
-#define OSPX_m_used(m) OSPX_bitset(ospx_ectx.ectx_bitmap, m+1)
-#define OSPX_m_del(m)  OSPX_bitclr(ospx_ectx.ectx_bitmap, m+1)
+#define OSPX_m_isfree(m) (!BIT_get(ospx_ectx.ectx_bitmap, m+1))
+#define OSPX_m_used(m) BIT_set(ospx_ectx.ectx_bitmap, m+1)
+#define OSPX_m_del(m)  BIT_clr(ospx_ectx.ectx_bitmap, m+1)
 #define OSPX_m_new(m) \
 	{ int i=0;\
 		for (;i<255; i++) {\
@@ -74,7 +74,7 @@ struct forcomplier {
 		}\
 	}
 
- OSPX_em_t *OSPX_ctx(uint8_t m) {	
+OSPX_em_t *OSPX_ctx(uint8_t m) {	
 	OSPX_em_t *ctx = ospx_ectx.em;
 
 	if (ctx && m != ctx->m)  	

@@ -468,10 +468,10 @@ tpool_free(struct tpool_t *pool) {
 	
 	/* Free the memory pool */
 	if (pool->mp) {
-//#ifndef NDEBUG
+#ifndef NDEBUG
 		fprintf(stderr, "-----MP----\n%s\n",
 			mpool_stat_print(pool->mp, NULL, 0));
-//#endif	
+#endif	
 		mpool_destroy(pool->mp, 1);
 		free(pool->mp);
 	}
@@ -1679,10 +1679,10 @@ tpool_task_wait_ex(struct tpool_t *pool, long call, struct task_t *entry, int *n
 		*n = ok;
 		return 0;
 	}
-	*n = 0;
+	error = ok = 0;
 
 	OSPX_pthread_mutex_lock(&pool->mut);		
-	for (error=0;;) {	
+	for (;;) {			
 		if (!ms) 
 			error = ETIMEDOUT;
 
@@ -1717,17 +1717,15 @@ tpool_task_wait_ex(struct tpool_t *pool, long call, struct task_t *entry, int *n
 	}			
 	OSPX_pthread_mutex_unlock(&pool->mut);
 	
-	/* Check the result */
-	for (i=0; i<num; i++) {
-		if (entry[i].hp_last_attached != pool || !entry[i].f_stat) {
-			++ *n;
-			continue;
-		}
+	for (i=0, ok=0; i<num; i++) {
+		if (entry[i].hp_last_attached != pool || !entry[i].f_stat)
+			++ ok;
 	}
-
-	if (*n >= nlimit)
+	if (ok >= nlimit)
 		error = 0;
 
+	*n = ok;
+	
 	return error;
 }
 
@@ -2073,7 +2071,13 @@ tpool_gettask(struct tpool_t *pool, struct tpool_thread_t *self) {
 					if (80 == ++ ele)
 						break;
 				}
-				list_cut_position(&pool->gcq, &pool->clq, pos);
+				/* Deal with the situation that the number of
+				 * object in the GC queue is less than 80 */
+				if (pos == &pool->clq)
+					pos = pool->clq.prev;
+
+				/* Move parts of objects from the cache into the GC queue */
+				__list_cut_position(&pool->gcq, &pool->clq, pos);
 			}
 			__curtask = &pool->sys_GC_task;
 			__curtask->th = self;

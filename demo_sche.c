@@ -44,7 +44,7 @@ int main()
 	printf("%s\n", stpool_status_print(hp, NULL, 0));
 		
 	/* Add tasks */
-	times = 900000;
+	times = 90000;
 	arg = (int *)malloc(times * sizeof(int));
 	for (i=0; i<times; i++) {
 		/* It may take a long time to load a large amount of tasks 
