@@ -367,7 +367,7 @@ mpool_delete(struct mpool_t *mp, void *ptr) {
 	struct mpool_obj_ptr_t *optr = (struct mpool_obj_ptr_t *)((uint8_t *)ptr - mp->align);
 	struct mpool_init_data_t *initd = MPOOL_data(mp);
 	struct hlist_node *pos;
-	struct mpool_blk_t *blk, *pre;
+	struct mpool_blk_t *blk;
 	
 	if ((!ptr) || optr->f_resv) {
 		assert(0);

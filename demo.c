@@ -106,7 +106,7 @@ int main()
 				       1   /*priority queue num */
 					   );
 	
-	/* Set the sleep time for the threads (10s + random() % 25s)*/
+	/* Set the sleep time for the threads (10s + random() % 60s)*/
 	stpool_set_activetimeo(hp, 10);
 	
 	/* Print the status of the pool */

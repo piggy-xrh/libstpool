@@ -770,7 +770,7 @@ EXPORT long stpool_wkid();
  */
 EXPORT int stpool_throttle_wait(HPOOL hp, long ms);
 
-/* @stpool_wait(2/3/ex)
+/* @stpool_wait(ex)
  *	  Wait for the tasks' being done in @ms milliseconds. the functions
  * of @stpool_waitex are just the same as @stpool_wait's. and as you see,
  * @stpool_waitex use the callback @sttask_match to find the task. if there 
@@ -796,14 +796,66 @@ EXPORT int stpool_throttle_wait(HPOOL hp, long ms);
  *		(If it is woke up by @stpool_wakeup , it returns -1)
  */
 EXPORT int  stpool_task_wait(HPOOL hp, struct sttask_t *ptsk, long ms);
-EXPORT int  stpool_task_wait2(HPOOL hp, struct sttask_t *entry, int n, long ms);
-EXPORT int  stpool_task_wait3(HPOOL hp, struct sttask_t *entry, int *n, long ms);
 EXPORT int  stpool_task_waitex(HPOOL hp, int (*sttask_match)(struct stpool_tskstat_t *stat, void *arg), void *arg, long ms); 
+
+/* @stpool_task_wait2
+ *		Wait for all tasks' being done in @ms milliseconds. 
+ */
+#define stpool_task_wait2(hp, entry, n, ms) stpool_task_any_wait(hp, entry, n, NULL ms)
+
+/* @stpool_task_any_wait
+ *		Wait for tasks' being done in @ms milliseconds.
+ * 
+ * Arguments:
+ *    @hp             [in]  the pool handle 
+ *
+ *    @entry          [in]  the tasks array entry, if @entry is NULL, the params @n 
+ *                          and @npre, will be ignored. its function is the same as 
+ *                          @stpool_task_wait(hp, NULL, ms) does.
+ *
+ *    @n              [in]  the tasks item number of the @entry.
+ *
+ *    @n_pre          [in/out]      If @npre is NULL, it tell the @stpool_task_any_wait that
+ *                             it should not return until the pool have done all of the tasks 
+ *                             existing in the @entry. 
+ *                                  Or @stpool_task_any_wait will not return until the pool
+ *                             has done much more than *@npre tasks who is existing in the 
+ *                             @entry, and after returning from @stpool_task_any_wait, *@npre
+ *                             will be filled up with the number of tasks who has been done
+ *                             by the pool currently.
+ *                             
+ *
+ *    @ms             [in]  milliseconds to wait (-1 == INFINITE)
+ *
+ * Return:
+ *	  On success, it returns 0.  
+ *	  On timeout, 1 is returned, 
+ *	 (If it is woke up by @stpool_wakeup , it returns -1)
+ */
+EXPORT int  stpool_task_any_wait(HPOOL hp, struct sttask_t *entry, int n, int *npre, long ms);
+
+/* @stpool_pending_leq_wait
+ *      Watch the number of the pending task
+ * 
+ * Arguments:
+ *    @hp             [in]  the pool handle 
+ *
+ *    @n_max_pendings [in]  If the number of pending task existing in the pool
+ *                          is no more than @n_max_pendings, @stpool_pending_leq_wait
+ *                          will return imediately.
+ *
+ *    @ms             [in]  milliseconds to wait (-1 == INFINITE)
+ *
+ * Return:
+ *	  On success, it returns 0.  
+ *	  On timeout, 1 is returned, 
+ *	 (If it is woke up by @stpool_wakeup , it returns -1)
+ */
 EXPORT int  stpool_pending_leq_wait(HPOOL hp, int n_max_pendings, long ms);
 
 /* @stpool_wakeup
  *		 Wake up the wait functions such as @stpool_throttle_wait,
- * @stpool_task_wait, @stpool_task_wait2, @stpool_task_wait3 and 
+ * @stpool_task_wait, @stpool_task_wait2, @stpool_task_any_wait and
  * so on.
  * 
  * Arguments:

@@ -51,8 +51,8 @@
 
 #define __SHOW_WARNING__(prompt) \
 	fprintf(stderr, "WARNING: %s:%s:%s:%d\n", prompt, __FILE__, __FUNCTION__, __LINE__)
-#define __SHOW_ERR__(prompt) \
-	fprintf(stderr, "ERR: %s:%s:%s:%d:%s\n", prompt, __FILE__, __FUNCTION__, __LINE__, strerror(errno))
+#define __SHOW_ERR__(prompt, error) \
+	fprintf(stderr, "ERR: %s:%s:%s:%d:%s\n", prompt, __FILE__, __FUNCTION__, __LINE__, OSPX_sys_strerror(error))
 
 #define __curtask  self->current_task
 #define tpool_thread_setstatus(self, status)    tpool_thread_status_change(self->pool, self, status, 0)
@@ -152,7 +152,7 @@ static inline void tpool_increase_threads(struct tpool_t *pool, struct tpool_thr
 static void tpool_schedule(struct tpool_t *pool, struct tpool_thread_t *self);
 static void tpool_task_complete(struct tpool_t *pool, struct tpool_thread_t *self, struct task_t *ptsk, int task_code); 
 
-static void 
+static void inline
 tpool_setstatus(struct tpool_t *pool, long status, int synchronized) {
 	if (synchronized)
 		pool->status = status;
@@ -194,7 +194,8 @@ tpool_GC_run(struct task_t *ptsk) {
 #if !defined(NDEBUG) && !defined(_WIN32)
 	prctl(PR_SET_NAME, ptsk->task_name);
 #endif
-
+	
+	/* Pay back the task objects to the system */
 	while (!list_empty(&pool->gcq)) {
 		obj = list_entry(pool->gcq.next, struct task_t, wait_link);
 		list_del(&obj->wait_link);
@@ -214,14 +215,19 @@ tpool_GC_run(struct task_t *ptsk) {
 
 void 
 tpool_task_setschattr(struct task_t *ptsk, struct xschattr_t *attr) {
+	/* Correct the priority param */
 	if (attr->pri < 0)
 		attr->pri = 0;
 	if (attr->pri > 99)
 		attr->pri = 99;
 	
+	/* If the task's scheduling attribute is not permanent,
+	 * It'll be reset at the next scheduling time */
 	if (!attr->permanent) 
 		ptsk->f_mask |= TASK_F_PRI_ONCE;	
-
+	
+	/* If the task has a zero priority, We just push the task into the
+	 * lowest priority queue */
 	if (!attr->pri_policy || (!attr->pri && P_SCHE_BACK == attr->pri_policy)) {
 		ptsk->f_mask |= TASK_F_PUSH;
 		ptsk->f_mask &= ~TASK_F_PRI;
@@ -229,6 +235,9 @@ tpool_task_setschattr(struct task_t *ptsk, struct xschattr_t *attr) {
 		ptsk->pri_q = 0;
 	
 	} else {
+		/* We set the task with TASK_F_ADJPRI, The pool will 
+		 * choose a propriate priority queue to queue the task
+		 * when the user calls @tpool_add_task/routine */
 		ptsk->f_mask |= (TASK_F_PRI|TASK_F_ADJPRI);
 		ptsk->f_mask &= ~TASK_F_PUSH;
 		ptsk->pri = attr->pri;	
@@ -270,7 +279,7 @@ tpool_create(struct tpool_t  *pool, int q_pri, int maxthreads, int minthreads, i
 	 */
 	if ((errno = OSPX_pthread_mutex_init(&pool->mut, 1))) {
 		fprintf(stderr, "WARNING: OS does not support RECURSIVE MUTEX:%s\n",
-			strerror(errno));
+			OSPX_sys_strerror(errno));
 		if ((errno = OSPX_pthread_mutex_init(&pool->mut, 0)))
 			return POOL_ERR_ERRNO;
 	}
@@ -377,7 +386,7 @@ err2:
 err1:
 	tpool_setstatus(pool, POOL_F_DESTROYED, 0);
 	OSPX_pthread_mutex_destroy(&pool->mut);	
-	__SHOW_WARNING__("Err");
+	__SHOW_ERR__("Err", errno);
 	return error;
 }
 
@@ -988,7 +997,7 @@ tpool_task_complete_nocallback_l(struct tpool_t *pool, struct list_head *rmq) {
 
 /* NOTE:
  * 		@tpool_task_detach is only allowed being called in the
- * task's completion.
+ * task's working routine or in the task's completion routine.
  */
 void
 tpool_detach_task(struct tpool_t *pool, struct task_t *ptsk) {
@@ -1451,9 +1460,9 @@ out:
 	}
 	
 	/* Wake up working threads to schedule tasks.
-	 *  .Is pool paused ?
 	 *  .Are there any FREE threads ?
 	 *  .Has the threads number arrived at the limit ?
+	 *  .Is pool paused ?
 	 */
 	if ((pool->n_qths + pool->nthreads_going_rescheduling) ==
 		(pool->nthreads_waiters + pool->nthreads_running) &&	
@@ -1539,12 +1548,8 @@ tpool_wakeup(struct tpool_t *pool, long wkid) {
 				lwoke |= WK_T_THROTTLE_WAIT|WK_T_PENDING_WAIT;
 				break;
 			case WK_T_WAIT:   
-			case WK_T_WAIT2:
-			case WK_T_WAIT3:
-			case WK_T_WAITEX:
 				 OSPX_pthread_cond_broadcast(&pool->cond_comp);
-				lwoke |= WK_T_WAIT|WK_T_WAIT2|
-						 WK_T_WAIT3|WK_T_WAITEX;
+				lwoke |= WK_T_WAIT;
 				 break;
 			case WK_T_WAIT_ALL: 	
 				OSPX_pthread_cond_broadcast(&pool->cond_ev);
@@ -1598,17 +1603,61 @@ tpool_throttle_wait(struct tpool_t *pool, long ms) {
 	return error ? 1 : 0;
 }
 
+static inline
+int tpool_scan_task_entry(struct tpool_t *pool, struct task_t *entry, int n, int *npre) {
+	int i, ok = 0, dumy_npre = 0;
+		
+	if (!npre)
+		npre = &dumy_npre;
+
+	if (!entry) {
+		*npre = 0;
+		return 1;
+	}
+
+	/* Scan the tasks' entry */
+	for (i=0; i<n; i++) {
+		/* It's not safe here to wait the task who is added into 
+		 * the pool by tpool_add_routine */
+		assert(!(entry[i].f_mask & TASK_F_ONCE));
+		
+		if (entry[i].hp_last_attached != pool || !entry[i].f_stat) {
+			++ ok;
+		}
+	}
+
+	/* Check the @npre */
+	if (&dumy_npre == npre)
+		return n == ok ? 0 : 1;
+
+	if (*npre > ok) 
+		*npre = ok;
+		
+	if (ok > *npre || n == ok) {
+		*npre = ok;
+		return 0;
+	}
+
+	return 1;
+}
+
+
+/* NOTE:
+ * 		The user must ensure that the task objects are valid before
+ * returning from @tpool_task_any_wait */
 int  
-tpool_task_wait(struct tpool_t *pool, struct task_t *ptsk, long ms) {
-	int error, wokeup = 0;
+tpool_task_any_wait(struct tpool_t *pool, struct task_t *entry, int n, int *npre, long ms) {
+	int i, error = 0, wokeup = 0;
 	
-	if (ptsk && (ptsk->hp_last_attached != pool || !ptsk->f_stat))
+	/* Scan the entry */	
+	if (!tpool_scan_task_entry(pool, entry, n, npre))
 		return 0;
 
-	OSPX_pthread_mutex_lock(&pool->mut);	
-	for (error=0;;) {	
-		if (list_empty(&pool->trace_q) ||
-			(ptsk && !ptsk->f_stat)) {
+	OSPX_pthread_mutex_lock(&pool->mut);		
+	for (;;) {	
+		/* Scan the entry again if we have gotten the lock */
+		if (!tpool_scan_task_entry(pool, entry, n, npre) || 
+			(!entry && !pool->n_qtrace)) {
 			error = 0;
 			break;
 		}
@@ -1625,10 +1674,16 @@ tpool_task_wait(struct tpool_t *pool, struct task_t *ptsk, long ms) {
 			error = -1;
 			break;
 		}
-
-		if (ptsk)
-			++ ptsk->ref;
-		++ pool->waiters;	
+		
+		/* NOTE:
+		 * 	   We increase the waiters of all tasks 
+		 */
+		if (entry) {
+			for (i=0; i<n; i++) 
+				++ entry[i].ref;
+			pool->waiters += n;
+		} else
+			++ pool->waiters;
 
 		/* Wait for the tasks' completions in ms millionseconds */
 		WPUSH(pool, WK_T_WAIT, tpool_wkid())
@@ -1637,107 +1692,17 @@ tpool_task_wait(struct tpool_t *pool, struct task_t *ptsk, long ms) {
 		else
 			error = OSPX_pthread_cond_wait(&pool->cond_comp, &pool->mut);	
 		WPOP(pool, wokeup)
-
-		if (ptsk)
-			-- ptsk->ref;
-		-- pool->waiters;
-	}		
-	OSPX_pthread_mutex_unlock(&pool->mut);
-
-	return error;
-}
-
-
-/* NOTE:
- * 		The user must ensure that the task objects are valid before
- * returning from @tpool_task_wait_ex */
-static int  
-tpool_task_wait_ex(struct tpool_t *pool, long call, struct task_t *entry, int *n, int nlimit, long ms) {
-	int error, ok;
-	int i, wokeup = 0, num = *n;
-	
-	/* Verify the param */
-	if (!entry || !n || !*n)
-		return 0;
-
-	/* Fix the param */
-	if (num < nlimit)
-		nlimit = num;
-
-	/* Scan the tasks' entry */
-	for (i=0, ok=0; i<num; i++) {
-		if (entry[i].hp_last_attached != pool || !entry[i].f_stat) {
-			++ ok;
-		}
-
-		/* It's not safe here to wait the task who is added into 
-		 * the pool by tpool_add_routine */
-		assert(!(entry[i].f_mask & TASK_F_ONCE));
-	}
-	
-	if (ok >= nlimit) {
-		*n = ok;
-		return 0;
-	}
-	error = ok = 0;
-
-	OSPX_pthread_mutex_lock(&pool->mut);		
-	for (;;) {			
-		if (!ms) 
-			error = ETIMEDOUT;
-
-		if (ETIMEDOUT == error) {
-			error = 1;
-			break;	
-		}
-
-		if (wokeup) {
-			error = -1;
-			break;
-		}
 		
-		/* NOTE:
-		 * 	   We increase the waiters of all tasks 
-		 */
-		for (i=0; i<num; i++) 
-			++ entry[i].ref;
-		pool->waiters += num;
-
-		/* Wait for the tasks' completions in ms millionseconds */
-		WPUSH(pool, call, tpool_wkid())
-		if (-1 != ms)
-			error = OSPX_pthread_cond_timedwait(&pool->cond_comp, &pool->mut, &ms);
-		else
-			error = OSPX_pthread_cond_wait(&pool->cond_comp, &pool->mut);	
-		WPOP(pool, wokeup)
-
-		for (i=0; i<num; i++) 
-			-- entry[i].ref;
-		pool->waiters -= num;
+		if (entry) {
+			for (i=0; i<n; i++) 
+				-- entry[i].ref;
+			pool->waiters -= n;
+		} else
+			-- pool->waiters;
 	}			
 	OSPX_pthread_mutex_unlock(&pool->mut);
 	
-	for (i=0, ok=0; i<num; i++) {
-		if (entry[i].hp_last_attached != pool || !entry[i].f_stat)
-			++ ok;
-	}
-	if (ok >= nlimit)
-		error = 0;
-
-	*n = ok;
-	
 	return error;
-}
-
-
-int  
-tpool_task_wait2(struct tpool_t *pool, struct task_t *entry, int n, long ms) {
-	return tpool_task_wait_ex(pool, WK_T_WAIT2, entry, &n, n, ms);
-}
-
-int  
-tpool_task_wait3(struct tpool_t *pool, struct task_t *entry, int *n, long ms) {
-	return tpool_task_wait_ex(pool, WK_T_WAIT3, entry, n, 1, ms);
 }
 
 int  
@@ -1777,7 +1742,7 @@ tpool_task_waitex(struct tpool_t *pool, int (*task_match)(struct tpool_tskstat_t
 		++ ptsk->ref;
 		++ pool->waiters;
 		
-		WPUSH(pool, WK_T_WAITEX, tpool_wkid())
+		WPUSH(pool, WK_T_WAIT, tpool_wkid())
 		if (-1 != ms)
 			error = OSPX_pthread_cond_timedwait(&pool->cond_comp, &pool->mut, &ms);
 		else
@@ -2185,8 +2150,8 @@ thcreater_exception_handler(struct tpool_thread_t *self) {
 	struct tpool_thread_t *th;
 	
 	while (!list_empty(&self->thq)) {
-		list_del(&th->link_free);
 		th = list_entry(self->thq.next, struct tpool_thread_t, link_free);
+		list_del(&th->link_free);
 		release = th->structure_release;
 
 		OSPX_pthread_mutex_lock(&self->pool->mut);
@@ -2226,7 +2191,7 @@ do_create_threads(struct tpool_thread_t *self) {
 					struct tpool_thread_t, link_free);
 		
 		if ((errno = OSPX_pthread_create(&th->thread_id, 0, tpool_thread_entry, th))) {
-			__SHOW_ERR__("pthread_create error");
+			__SHOW_ERR__("pthread_create error", errno);
 			break;
 		}
 		list_del(&th->link_free);	
@@ -2426,8 +2391,7 @@ tpool_add_threads(struct tpool_t *pool, struct tpool_thread_t *th, int nthreads,
 		if (list_empty(&pool->freelst)) {
 			self = (struct tpool_thread_t *)malloc(sizeof(*self));
 			if (!self) {
-				errno = ENOMEM;
-				__SHOW_ERR__(__FUNCTION__);
+				__SHOW_ERR__(__FUNCTION__, ENOMEM);
 				break;
 			}
 			INIT_thread_structure(pool, self, 1);	
@@ -2444,7 +2408,7 @@ tpool_add_threads(struct tpool_t *pool, struct tpool_thread_t *th, int nthreads,
 		tpool_addref_l(pool, 0, dummy_null_lptr);	
 		if (!th) {
 			if ((errno = OSPX_pthread_create(&self->thread_id, 0, tpool_thread_entry, self))) {
-				__SHOW_ERR__("pthread_create error");
+				__SHOW_ERR__("pthread_create error", errno);
 				tpool_release_l(pool, 0, dummy_null_lptr);
 				if (self->structure_release)
 					free(self);

@@ -86,18 +86,22 @@ stpool_task_new(const char *name,
 		}
 	}
 	
-	if (gs_mp) {
+	if (gs_mp) 
 		ptsk = mpool_new(gs_mp);
-		memset(ptsk, 0, sizeof(struct task_t));
-	} else
+	else
 		ptsk = calloc(sizeof(struct task_t), 1);
-
+	
+	/* Initialzie the task object */
 	if (ptsk) {
+		if (gs_mp) {
+			memset(ptsk, 0, sizeof(struct task_t));
+			ptsk->f_mask = TASK_F_MPOOL;
+		}
+
 		tpool_task_init(ptsk, name, (int (*)(struct task_t *))run, 
 			(void (*)(struct task_t *, long , int))complete, arg);
 		
-		if (gs_mp)
-			ptsk->f_mask = TASK_F_MPOOL;
+		/* Reset the task with the default priority */
 		ptsk->pri_policy = P_SCHE_BACK;
 		ptsk->f_mask |= TASK_F_PUSH;
 	}
@@ -159,6 +163,8 @@ stpool_create(int maxthreads, int minthreads, int suspend, int pri_q_num) {
 			pool = NULL;
 		} else {
 			tpool_atexit(pool, tpool_hook_atexit, NULL);	
+			
+			/* Enable caching the task objects for @tpool_add_routine */
 			tpool_use_mpool(pool);
 		}
 	}
@@ -190,16 +196,12 @@ stpool_set_activetimeo(HPOOL hp, long acttimeo) {
 
 void 
 stpool_adjust_abs(HPOOL hp, int maxthreads, int minthreads) {
-	tpool_adjust_abs((struct tpool_t *)hp, 
-					maxthreads, 
-					minthreads);
+	tpool_adjust_abs((struct tpool_t *)hp, maxthreads, minthreads);
 }
 
 void 
 stpool_adjust(HPOOL hp, int maxthreads, int minthreads) {
-	tpool_adjust((struct tpool_t *)hp, 
-				 maxthreads, 
-				 minthreads);
+	tpool_adjust((struct tpool_t *)hp, maxthreads, minthreads);
 }
 
 int
@@ -214,12 +216,8 @@ stpool_adjust_wait(HPOOL hp) {
 
 struct stpool_stat_t *
 stpool_getstat(HPOOL hp, struct stpool_stat_t *stat) {
-	struct tpool_stat_t *st;
-	
-	st = tpool_getstat((struct tpool_t *)hp, 
-					  (struct tpool_stat_t *)stat);
-	
-	return (struct stpool_stat_t *)st;
+	return (struct stpool_stat_t *)tpool_getstat((struct tpool_t *)hp, 
+					 		 (struct tpool_stat_t *)stat);	
 }
 
 const char *
@@ -325,25 +323,15 @@ stpool_wkid() {
 }
 
 int  
-stpool_task_wait(HPOOL hp, struct sttask_t *tsk, long ms) {
-	return tpool_task_wait((struct tpool_t *)hp,
-	                  (struct task_t *)tsk,
-					  ms);
+stpool_task_wait(HPOOL hp, struct sttask_t *ptsk, long ms) {
+	return stpool_task_any_wait(hp, ptsk, ptsk ? 1 : 0, NULL, ms);
 }
 
 int  
-stpool_task_wait2(HPOOL hp, struct sttask_t *entry, int n, long ms) {
-	return tpool_task_wait2((struct tpool_t *)hp,
+stpool_task_any_wait(HPOOL hp, struct sttask_t *entry, int n, int *npre, long ms) {
+	return tpool_task_any_wait((struct tpool_t *)hp,
 	                  (struct task_t *)entry,
-					  n,
-					  ms);
-}
-
-int  
-stpool_task_wait3(HPOOL hp, struct sttask_t *entry, int *n, long ms) {
-	return tpool_task_wait3((struct tpool_t *)hp,
-	                  (struct task_t *)entry,
-					  n,
+					  n, npre,
 					  ms);
 }
 
@@ -362,6 +350,6 @@ stpool_pending_leq_wait(HPOOL hp, int n_max_pendings, long ms) {
 
 
 void 
-stpool_wakeup(HPOOL hp, long wakeup_type) {
-	tpool_wakeup((struct tpool_t *)hp, wakeup_type);
+stpool_wakeup(HPOOL hp, long wkid) {
+	tpool_wakeup((struct tpool_t *)hp, wkid);
 }

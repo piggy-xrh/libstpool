@@ -125,9 +125,7 @@
                     2.一个任务对象某个时刻只能属于一个线程池. 待其完全脱离线程池后,可加入到另外一个 
                       线程池.
                    
-                    (当stpool_task_wait(2/3/ex)函数返回0，或者stpool_task_gettskstat返回0时，或任务
-                     没有加入到任何任务池中时, 表明任务是已经完全脱离了线程池的), 同时用户也可以手动
-                     调用stpool_detach_task来让一个任务强制从一个线程池中脱离.(参见#附录1)
+                    (用户也可以手动在task_run或者task_complete中调用stpool_detach_task来让一个任务强制从一个线程池中脱离.(参见#附录1))
 
          参数:
                  [in] ptsk          源任务对象
@@ -150,14 +148,22 @@
 
       #附录1
           model:
-            任务加入到一个线程池中时，其任务对象内部有一个trace_link成员会被任务池用来记录连接信息,
+            A1. 任务加入到一个线程池中时，其任务对象内部有一个trace_link成员会被任务池用来记录连接信息,
        正常情况下当任务对象的task_run和task_complete被执行完毕或者任务被移除导致task_complete执行
        完毕后, pool才会将任务对象的trace_link记录清空,这个时候任务对象就是自由的，完全脱离了线程池.
 
-            可以在task_run或task_complete中调用stpool_detach_task强制让线程池来清空trace_link记录,这个时候
-       任务对象虽然还没执行完,但已经是脱离了线程池的. 这导致stpool_task_wait(2/3/ex)可能会返回，因为该等待
-       的任务已经不存在于任务池中了或者任务池已经认为其已经执行完毕了(实际上可能还正在执行task_run/task_complete).
-       不管任务是否脱离, 如果一个任务被线程池正常调度,线程池中的线程将按照正常流程执行完task_run后, 再执行task_complete
+            A2. 可以在task_run或task_complete中调用stpool_detach_task强制让线程池来移除trace_link记录,这个时候
+       任务对象虽然还没执行完,但已经是脱离了线程池的. 这导致stpool_task_wait(2/ex)可能会返回.
+             
+            A3. task的所有等待函数(stpool_task_wait/2/ex, stpool_task_any_wait)返回的条件是:
+                task不存在于该线程池中或者等待超时!
+            
+            A4. 在task_run或者task_complete中调用stpool_detach_task后的影响.
+               1. 根据A3,stpool_deatch_task会尝试唤醒task的等待函数（如果task被这些wait函数作为参数的话)
+               2. 在调用stpool_deatch_task后, 用户就可以调用stpool_add_task/routine来将任务添加到任意一个线程池了,
+                  
+               注意: 如果在task_run中调用, stpool_deatch_task调用虽然导致task脱离了原来的pool, 但是原来的pool在
+                    调用完task_run后，还是会继续调用task_complete来完成一个任务的正常执行!
 
       ----------------------APIs--------------------
      1. const char *stpool_version();
@@ -221,7 +227,7 @@
 
               2)当引用计数为0时,线程池未处于suspended状态,线程池仍将会在后台执行完所有任务.只是
           线程池的句柄不再有效,即用户已不能控制线程池. 当线程池中所有的任务被完后后,线程池将
-          自动被销毁. (同时这种情况下,任何任务的重新调度请求会被拒绝(即@task_complete返回非0))
+          自动被销毁. (同时这种情况下,任何任务的调度请求会被拒绝)
           
   
    5. void stpool_set_activetimeo(HPOOL hp, long acttimeo)
@@ -529,15 +535,21 @@
           返回值:
                  同stpool_task_wait
 
-   25. int stpool_task_wait3(HPOOL hp, struct sttask_t *entry, int *n, long ms);
+   25. int stpool_task_any_wait(HPOOL hp, struct sttask_t *entry, int n, int *npre, long ms);
          描述:
-                功能同stpool_task_wait2,不同的是只要entry中有一个任务未在hp中,该函数即会返回.
-             返回时n将记录不在hp中的任务个数
+               继上一次后,等待任意一个entry组中的task完成.
          
          参数:
                     [in]     hp              线程池句柄
-                    [in]     entry           待等待的任务数组  
-                    [in/out] n               entry数组中任务个数
+                    [in]     entry           待等待的任务数组,如果entry为NULL,则参数n,npre会被忽略,此时等价于
+                                                stpool_task_wait(hp, NULL, ms);       
+                    [in]     n               entry数组中任务个数
+                    [in/out] npre            上一次在entry中已经被完成的task数目:
+                                                 如果npre为NULL, 则表示所有数组中的任务被完成后,该函数才返回,
+                                              此时等价于 stpool_task_wait2(hp, entry, n, ms)
+                                                 如果npre不为NULL, 则表示当数组中的任务被完成数目大于*npre个,
+                                              stpool_task_any_wait就返回,同时,*npre被填充为当前检测到entry数组中
+                                              被hp完成的任务个数. (*npre不能大于n)
                     [in]     ms              等待的毫秒数,如果为-1,则表示一直等待
         
          返回值:
