@@ -71,6 +71,7 @@ void tpool_task_getschattr(struct task_t *ptsk, struct xschattr_t *attr);
 int  tpool_create(struct tpool_t *pool, int q_pri, int maxthreads, int minthreads, int suspend);
 void tpool_use_mpool(struct tpool_t *pool);
 void tpool_load_env(struct tpool_t *pool);
+void tpool_adjust_cache(struct tpool_t *pool, struct cache_attr_t *attr, struct cache_attr_t *oattr); 
 void tpool_atexit(struct tpool_t *pool, void (*atexit_func)(struct tpool_t *pool, void *arg), void *arg);
 long tpool_addref(struct tpool_t *pool);
 long tpool_release(struct tpool_t *pool, int clean_wait);
@@ -86,11 +87,10 @@ long tpool_mark_task(struct tpool_t *pool, struct task_t *ptsk, long lflags);
 int  tpool_mark_task_ex(struct tpool_t *pool, 
 					 long (*tskstat_walk)(struct tpool_tskstat_t *stat, void *arg),
 					 void *arg);
-int  tpool_enable_rescheduling_task(struct tpool_t *pool, struct task_t *ptsk, int enable); 
 void tpool_throttle_enable(struct tpool_t *pool, int enable);
 int  tpool_throttle_wait(struct tpool_t *pool, long ms);
 void tpool_suspend(struct tpool_t *pool, int wait);
-void tpool_resume(struct tpool_t *poo);
+void tpool_resume(struct tpool_t *pool);
 int  tpool_add_task(struct tpool_t *pool, struct task_t *ptsk);
 int  tpool_add_routine(struct tpool_t *pool, 
 					const char *name, int (*task_run)(struct task_t *ptsk), 

@@ -29,10 +29,14 @@ int  task_run(struct sttask_t *ptsk) {
 	return 0;
 }
 
+void task_complete(struct sttask_t *ptsk, long vmflags, int code) {
+	printf("complete.\n");
+}
+
 int main()
 {
 	time_t now;
-	int i, c, times;
+	int i, c, times, j=0;
 	int sum, *arg;
 	HPOOL hp;
 		
@@ -44,7 +48,7 @@ int main()
 	printf("%s\n", stpool_status_print(hp, NULL, 0));
 		
 	/* Add tasks */
-	times = 90000;
+	times = 900;//00;
 	arg = (int *)malloc(times * sizeof(int));
 	for (i=0; i<times; i++) {
 		/* It may take a long time to load a large amount of tasks 
@@ -54,6 +58,7 @@ int main()
 			fflush(stdout);
 		}
 		arg[i] = i;
+		stpool_add_routine(hp, "sche", task_run, task_complete, (void *)&arg[i], NULL);	
 		stpool_add_routine(hp, "sche", task_run, NULL, (void *)&arg[i], NULL);	
 	}
 	printf("\nAfter having executed @stpool_add_routine for %d times:\n"
@@ -63,8 +68,12 @@ int main()
 	printf("Press any key to resume the pool.\n");
 	getchar();
 	
+	stpool_release(hp);
+	getchar();
+	return 0;
 	/* Wake up the pool to schedule tasks */
-	stpool_resume(hp);
+	//stpool_resume(hp);	
+	stpool_remove_pending_task(hp, NULL, 1);
 
 	/* Wait for all tasks' being done. */
 	stpool_task_wait(hp, NULL, -1);
@@ -77,9 +86,10 @@ int main()
 	now = time(NULL);
 	printf("--OK. finished. <arg: %d> %s\n%s\n", 
 		sum, ctime(&now), stpool_status_print(hp, NULL, 0));
-#if 0
+#if 1
 	/* You can use debug library to watch the status of the pool */
 	while ('q' != getchar()) {
+		printf("%d\n", ++j);
 		for (i=0; i<40; i++)
 			stpool_add_routine(hp, "debug", task_run, NULL, &sum, NULL);	
 	}
@@ -88,7 +98,7 @@ int main()
 	while ((c=getchar()) && c != '\n' && c != EOF)
 		;
 #endif
-	
+	getchar();
 	/* Release the pool */
 	printf("Shut down the pool now.\n");
 	stpool_release(hp);

@@ -166,9 +166,8 @@ struct task_t {
 	uint16_t ref;
 
 	/* Whether the task has been detached to the pool */
-	uint16_t detached:1;
 	uint16_t do_again:1;
-	uint16_t resv:14;
+	uint16_t resv:15;
 	uint8_t *pdetached;
 
 	/* The priority attribute of the task */
@@ -206,7 +205,8 @@ enum {
 	THREAD_STAT_FORCE_QUIT,  /*Pool is being destroyed*/
 	THREAD_STAT_LEAVE,       /*Leaving*/
 	THREAD_STAT_RM     = (uint16_t)0x4000, /* Thread is in the RM queue */
-	THREAD_STAT_INNER  = THREAD_STAT_RM
+	THREAD_STAT_GC     = (uint16_t)0x8000,
+	THREAD_STAT_INNER  = THREAD_STAT_RM|THREAD_STAT_GC
 };
 
 /* Task type */
@@ -234,6 +234,9 @@ struct tpool_thread_t {
 #endif	
 	/* The last timeo value to wait for tasks */
 	long last_to;
+	
+	/* The GC counter */
+	uint32_t ncont_GC_counters;
 
 	/* The rest counter */
 	uint16_t ncont_rest_counters;
@@ -312,6 +315,16 @@ struct tpool_priq_t {
 	struct list_head task_q;
 };
 
+/* Cache attribute */
+struct cache_attr_t {
+	size_t nGC_cache;
+	size_t nGC_wakeup;
+	
+	size_t nGC_one_time;
+	long   nGC_rest_to;
+	long   nGC_delay_to;
+};
+
 /* The definition of the pool object */
 struct tpool_t {
 	long status;
@@ -326,9 +339,13 @@ struct tpool_t {
 	struct mpool_t *mp;
 
 	/* GC env */
+	long nGC, nGC_queued;
+	char b_GC_delay, b_GC_queued;
+	struct cache_attr_t cattr;
 	struct list_head clq, gcq;
 	struct tpool_thread_t *GC;
 	struct task_t sys_GC_task;
+	struct task_t sys_GC_notify_task;
 	
 	/* @ref is the references of the pool, and the
 	 * @user_ref is the references of users who is 

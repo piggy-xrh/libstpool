@@ -37,6 +37,10 @@ void task_complete(struct sttask_t *ptsk, long vmflags , int task_code) {
 		
 	if (g_test_reschedule) {
 		struct schattr_t attr;
+		
+		/* We sleep for a while to slow down the test */
+		msleep(1500);
+
 		/* We adjust the task's priority */
 		stpool_task_getschattr(ptsk, &attr);
 		if (!attr.permanent) {
@@ -44,12 +48,9 @@ void task_complete(struct sttask_t *ptsk, long vmflags , int task_code) {
 			attr.sche_pri  = 80;
 			stpool_task_setschattr(ptsk, &attr);
 		}
-		
+			
 		/* Reschedule the task */
 		stpool_add_task(ptsk->hp_last_attached, ptsk);
-		
-		/* We sleep for a while to slow down the test */
-		msleep(1500);
 	}	
 }
 
@@ -70,8 +71,10 @@ void task_complete2(struct sttask_t *ptsk, long vmflags, int task_code) {
 	}
 	
 	if (g_test_reschedule) {
-		stpool_add_task(ptsk->hp_last_attached, ptsk);
 		msleep(1500);
+		
+		/* Reschedule the task */
+		stpool_add_task(ptsk->hp_last_attached, ptsk);
 	}
 }
 

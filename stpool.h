@@ -801,7 +801,7 @@ EXPORT int  stpool_task_waitex(HPOOL hp, int (*sttask_match)(struct stpool_tskst
 /* @stpool_task_wait2
  *		Wait for all tasks' being done in @ms milliseconds. 
  */
-#define stpool_task_wait2(hp, entry, n, ms) stpool_task_any_wait(hp, entry, n, NULL ms)
+#define stpool_task_wait2(hp, entry, n, ms) stpool_task_any_wait(hp, entry, n, NULL, ms)
 
 /* @stpool_task_any_wait
  *		Wait for tasks' being done in @ms milliseconds.

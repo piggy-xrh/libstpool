@@ -36,7 +36,7 @@ static struct mpool_t *gs_mp = NULL;
 
 const char *
 stpool_version() {
-	return "2015/04/10-2.6-libstpool-list";
+	return "2015/04/10-2.6-libstpool-GC";
 }
 
 static void
