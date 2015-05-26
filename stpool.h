@@ -832,7 +832,7 @@ EXPORT int  stpool_task_waitex(HPOOL hp, int (*sttask_match)(struct stpool_tskst
  *	  On timeout, 1 is returned, 
  *	 (If it is woke up by @stpool_wakeup , it returns -1)
  */
-EXPORT int  stpool_task_any_wait(HPOOL hp, struct sttask_t *entry, int n, int *npre, long ms);
+EXPORT int  stpool_task_any_wait(HPOOL hp, struct sttask_t *entry[], int n, int *npre, long ms);
 
 /* @stpool_pending_leq_wait
  *      Watch the number of the pending task

@@ -100,7 +100,7 @@ int  tpool_remove_pending_task(struct tpool_t *pool, int dispatched_by_pool);
 void tpool_detach_task(struct tpool_t *pool, struct task_t *ptsk); 
 long tpool_wkid();
 int  tpool_task_waitex(struct tpool_t *pool, int (*task_match)(struct tpool_tskstat_t *stat, void *arg), void *arg, long ms); 
-int  tpool_task_any_wait(struct tpool_t *pool, struct task_t *entry, int n, int *npre, long ms);
+int  tpool_task_any_wait(struct tpool_t *pool, struct task_t *entry[], int n, int *npre, long ms);
 int  tpool_pending_leq_wait(struct tpool_t *pool,  int n_max_pendings, long ms); 
 
 #define WK_T_THROTTLE_WAIT 0x01  

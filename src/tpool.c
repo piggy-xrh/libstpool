@@ -1673,7 +1673,7 @@ tpool_throttle_wait(struct tpool_t *pool, long ms) {
 }
 
 static inline
-int tpool_scan_task_entry(struct tpool_t *pool, struct task_t *entry, int n, int *npre) {
+int tpool_scan_task_entry(struct tpool_t *pool, struct task_t *entry[], int n, int *npre) {
 	int i, ok = 0, dumy_npre = 0;
 		
 	if (!npre)
@@ -1688,9 +1688,9 @@ int tpool_scan_task_entry(struct tpool_t *pool, struct task_t *entry, int n, int
 	for (i=0; i<n; i++) {
 		/* It's not safe here to wait the task who is added into 
 		 * the pool by tpool_add_routine */
-		assert(!(entry[i].f_mask & TASK_F_ONCE));
+		assert(!(entry[i]->f_mask & TASK_F_ONCE));
 		
-		if (entry[i].hp_last_attached != pool || !entry[i].f_stat) {
+		if (entry[i]->hp_last_attached != pool || !entry[i]->f_stat) {
 			++ ok;
 		}
 	}
@@ -1715,7 +1715,7 @@ int tpool_scan_task_entry(struct tpool_t *pool, struct task_t *entry, int n, int
  * 		The user must ensure that the task objects are valid before
  * returning from @tpool_task_any_wait */
 int  
-tpool_task_any_wait(struct tpool_t *pool, struct task_t *entry, int n, int *npre, long ms) {
+tpool_task_any_wait(struct tpool_t *pool, struct task_t *entry[], int n, int *npre, long ms) {
 	int i, error = 0, wokeup = 0;
 	
 	/* Scan the entry */	
@@ -1749,7 +1749,7 @@ tpool_task_any_wait(struct tpool_t *pool, struct task_t *entry, int n, int *npre
 		 */
 		if (entry) {
 			for (i=0; i<n; i++) 
-				++ entry[i].ref;
+				++ entry[i]->ref;
 			pool->waiters += n;
 		} else
 			++ pool->waiters;
@@ -1764,7 +1764,7 @@ tpool_task_any_wait(struct tpool_t *pool, struct task_t *entry, int n, int *npre
 		
 		if (entry) {
 			for (i=0; i<n; i++) 
-				-- entry[i].ref;
+				-- entry[i]->ref;
 			pool->waiters -= n;
 		} else
 			-- pool->waiters;

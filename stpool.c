@@ -59,7 +59,7 @@ stpool_task_init(struct sttask_t *ptsk,
 	memset(nptsk, 0, sizeof(struct task_t));
 	tpool_task_init(nptsk, name, (int (*)(struct task_t *))run, 
 			(void (*)(struct task_t *, long , int))complete, arg);	
-	nptsk->pri_policy = P_SCHE_TOP;
+	nptsk->pri_policy = P_SCHE_BACK;
 	nptsk->f_mask |= TASK_F_PUSH;
 }
 
@@ -324,13 +324,13 @@ stpool_wkid() {
 
 int  
 stpool_task_wait(HPOOL hp, struct sttask_t *ptsk, long ms) {
-	return stpool_task_any_wait(hp, ptsk, ptsk ? 1 : 0, NULL, ms);
+	return stpool_task_any_wait(hp, ptsk ? &ptsk : NULL, ptsk ? 1 : 0, NULL, ms);
 }
 
 int  
-stpool_task_any_wait(HPOOL hp, struct sttask_t *entry, int n, int *npre, long ms) {
+stpool_task_any_wait(HPOOL hp, struct sttask_t *entry[], int n, int *npre, long ms) {
 	return tpool_task_any_wait((struct tpool_t *)hp,
-	                  (struct task_t *)entry,
+	                  (struct task_t **)entry,
 					  n, npre,
 					  ms);
 }

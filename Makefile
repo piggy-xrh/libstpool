@@ -32,12 +32,12 @@ PREPARE:
 
 libstpool.a:$(addprefix $(OBJS_DIR)/, $(OBJS_tpool)) 
 	$(AR) $(ARFLAGS) $@ $^ 
-	#$(STRIP) $(STRIPFLAGS) $@
+	$(STRIP) $(STRIPFLAGS) $@
 	chmod +x $@
 
 libstpool.so:$(addprefix $(OBJS_DIR)/, $(OBJS_tpool)) 
 	$(CC) --shared -o$@ $^
-	#$(STRIP) $(STRIPFLAGS) $@
+	$(STRIP) $(STRIPFLAGS) $@
 
 demo:demo.o libstpool.a 
 	$(CC) $(CFLAGS) -o$@ $^ -lpthread -lrt
