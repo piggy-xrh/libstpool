@@ -75,5 +75,44 @@ void  CMAllocator::dealloc(void *ptr) throw()
 
 void  CMAllocator::flush()
 {
+	mpool_flush(&m_mp);
 }
 
+CAllocator::Attr &CMAllocator::setAttr(Attr &attr) 
+{
+	struct mpool_attr_t at = {
+		attr.nBlkSize, attr.nMaxAlloc, attr.nMinCache
+	};
+	
+	mpool_attr_set(&m_mp, &at);
+	return getAttr(attr);
+}
+
+CAllocator::Attr &CMAllocator::getAttr(Attr &attr)
+{
+	struct mpool_attr_t at;
+	
+	mpool_attr_get(&m_mp, &at);
+	
+	attr.bReadOnly = false;
+	attr.nBlkSize  = at.blk_size;
+	attr.nMinCache = at.nmin_objs_cache;
+	attr.nMaxAlloc = at.nmax_alloc;
+	
+	return attr;
+}
+		
+CAllocator::Stat &CMAllocator::stat(CAllocator::Stat &s)
+{
+	struct mpool_stat_t st = {0};
+	
+	mpool_stat(&m_mp, &st);
+	
+	s.memHold = st.mem_hold_all;
+	s.nCached = st.nobjs_resved;
+	s.nAllocated = st.nobjs_allocated;
+	s.nAcquired = st.nobjs_acquired;
+	s.nBlks = st.nblks;
+	
+	return s;
+}

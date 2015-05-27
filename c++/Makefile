@@ -13,7 +13,7 @@ OBJS_tpool_c   :=stpool.o tpool.o ospx.o  ospx_error.o mpool.o
 OBJS_tpool_c++ :=CTaskPool.o CMPool.o CMAllocator.o
 OBJS_tpool     := $(OBJS_tpool_c) $(OBJS_tpool_c++)
 
-OBJS_DIR :=.obj
+OBJS_DIR :=.objc++
 VPATH =.:../src:..
 
 #Thanks for @pengjiasi: 
@@ -21,9 +21,9 @@ VPATH =.:../src:..
 
 CFLAGS  =-Isrc -s -O2 -DNDEBUG -D_GNU_SOURCE -fPIC 
 
-#CFLAGS  =-Isrc -g -D_GNU_SOURCE -fPIC
+CFLAGS  =-Isrc -g -D_GNU_SOURCE -fPIC
 
-CFLAGS += -I. -I../src -I..
+CFLAGS += -D_DISABLE_MPOOL -I. -I../src -I..
 ARFLAGS = -rv
 STRIPFLAGS = -xXg
 

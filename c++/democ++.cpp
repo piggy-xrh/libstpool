@@ -4,11 +4,11 @@ using namespace std;
 
 #include "CTaskPool.h"
 
-class myTask:public CPoolTask<16 /*sizeof(myTask)*/>
+class myTask:public CPoolTask<myTask>
 {
 	public:
 		myTask(CTaskPool *p, bool autoFree = false): 
-			CPoolTask<16>(p, "mytask"), m_autoFree(autoFree) {}
+			CPoolTask<myTask>(p, "mytask"), m_autoFree(autoFree) {}
 		~myTask() {}
 
 	private:
@@ -30,7 +30,7 @@ class myTask:public CPoolTask<16 /*sizeof(myTask)*/>
 	
 			/* If we want to free the task in the completion routine,
 			 * we should call @detach to tell the pool to remove the 
-			 * task from the pool before doing its completion routine
+			 * task from the pool before executing its completion routine
 			 * completely */
 			if (m_autoFree) {
 				getParent()->detach(this);
@@ -43,8 +43,9 @@ class myTask:public CPoolTask<16 /*sizeof(myTask)*/>
 
 int main()
 {
+	/* Create a instance */
 	CTaskPool *pool = CTaskPool::createInstance(5, 0, false);
-	
+		
 	/* Print the status */
 	std::string s;
 	cout << pool->stat(s) << endl;
@@ -54,20 +55,28 @@ int main()
 	task->queue();
 	task->wait();
 	delete task;
-
+	
 	/* Test running amount of tasks */
-	for (int i=0; i<100; i++) {
+	pool->suspend();
+	for (int i=0; i<1000; i++) {
 		task = new myTask(pool, true);
 		task->queue();		
 	}
+	pool->resume();
 
 	/* Wait for all tasks' being done */
-	pool->wait(NULL, -1);
+	pool->wait();
 
 	cin.get();
 	/* Shutdown the pool */
 	pool->release();
 	
+	/* Look up the pool */
+	cout << CMPool::report(s) << endl;
+	cout << "\nafter FLUSH.\n" << endl;
+	CMPool::flush();
+	cout << CMPool::report(s) << endl;
+
 	cin.get();
 	return 0;
 }

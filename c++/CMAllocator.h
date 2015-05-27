@@ -44,6 +44,9 @@ class CMAllocator:public CAllocator
 		virtual void *alloc() throw();
 		virtual void  dealloc(void *ptr) throw();
 		virtual void  flush();
+		virtual Attr &setAttr(Attr &attr);
+		virtual Attr &getAttr(Attr &attr);
+		virtual Stat &stat(Stat &s);
 	private:	
 		long m_ref;
 		struct mpool_t m_mp;

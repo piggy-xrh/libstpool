@@ -33,6 +33,8 @@ extern "C"
 #include "stpool.h"
 }
 
+char externPoolAllocatorName[] = "taskPool";
+
 static int doTaskWrapper(struct sttask_t *task)
 {
 	return reinterpret_cast<CTask *>

@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdexcept>
 #include "CMAllocator.h"
 extern "C"
@@ -41,7 +42,7 @@ void *CMPool::sm_lock = NULL;
 CMPool::T CMPool::sm_ap;
 CMPool::CMPoolLockInitializer CMPool::dummy;
 
-CAllocator *CMPool::createAllocator(const char *desc, size_t bytes) throw (std::bad_alloc)
+CAllocator *CMPool::create(const char *desc, size_t bytes) throw (std::bad_alloc)
 {
 	CAllocator *alc = new(std::nothrow) CMAllocator(desc, bytes);
 
@@ -50,21 +51,37 @@ CAllocator *CMPool::createAllocator(const char *desc, size_t bytes) throw (std::
 	return alc;
 }
 
-CAllocator *CMPool::addAllocatorIfNoExist(size_t bytes) throw (std::bad_alloc)
+CAllocator *CMPool::addIfNoExist(size_t bytes) throw (std::bad_alloc)
+{
+	return addIfNoExist(NULL, bytes);
+}
+
+CAllocator *CMPool::addIfNoExist(const char *desc, size_t bytes) throw (std::bad_alloc)
 {
 	CLocker locker(sm_lock);
 	
 	T::iterator it;
 
-	/* Find a allocator */
-	if (sm_ap.end() != (it = sm_ap.find(bytes))) {
-		it->second->addRef();
-		return it->second;
+	if (!desc) {
+		/* Find a allocator according to the bytes */
+		if (sm_ap.end() != (it = sm_ap.find(bytes))) {
+			it->second->addRef();
+			return it->second;
+		}
+		desc = "dummy";
+	} else {
+		for (std::pair<T::iterator, T::iterator> r = sm_ap.equal_range(bytes);
+			r.first != r.second; ++ r.first) {
+			if (!r.first->second->desc().compare(desc)) {
+				r.first->second->addRef();
+				return r.first->second;
+			}
+		}
 	}
 	
 	/* We try to create a new default allocator if there
 	 * are none allocators exisiting in the map */
-	CAllocator *alc = createAllocator("dummy", bytes);
+	CAllocator *alc = create(desc, bytes);
 
 	try {
 		T::value_type ele = std::make_pair<size_t, CAllocator *>(bytes, alc);
@@ -140,4 +157,50 @@ CAllocator *CMPool::get(const char *desc)
 	}
 	
 	return NULL;
+}
+
+std::string &CMPool::report(std::string &s)
+{
+	char r[300];
+	CAllocator::Stat st;
+
+	s.clear();
+	CLocker locker(sm_lock);
+	for (T::iterator it = sm_ap.begin(), end = sm_ap.end();
+		it != end; it ++) {
+		CAllocator *alc = it->second;
+		CAllocator::Attr attr;
+		
+		alc->getAttr(attr);
+		alc->stat(st);
+		
+		/* Format the report */
+		sprintf(r, "=====================\n"
+		           "alc: \"%s\"\n"
+				   "objSize: %u\n"
+				   "memHold: %u bytes\n"
+				   "nCached: %u\n"
+				   "nAllocated: %u\n"
+				   "nAcquired: %u\n"
+				   "nBlks: %u\n"
+				   "readOnly: %s\n"
+				   "nMinCache: %u\n"
+				   "nMaxAlloc: %d\n"
+				   "nBlkSize: %u bytes\n",
+				   alc->desc().c_str(),
+				   alc->size(),
+				   st.memHold,
+				   st.nCached,
+				   st.nAllocated,
+				   st.nAcquired,
+				   st.nBlks,
+				   attr.bReadOnly ? "Yes" : "No",
+				   attr.nMinCache,
+				   attr.nMaxAlloc,
+				   attr.nBlkSize);
+
+		s.append(r);
+	}
+
+	return s;
 }

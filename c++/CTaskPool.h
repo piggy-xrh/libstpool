@@ -139,14 +139,14 @@ class CTaskPool
 		/* Wait for tasks' completion in @ms milliseconds.
 		 *   On success, ep_OK will be returned, or the error code will be returned.
 		 */
-		int  wait(CTask *task, long ms);
-		int  waitAll(const std::list<CTask *> &sets, long ms);
-		int  waitAny(const std::list<CTask *> &sets, long ms);
+		int  wait(CTask *task = NULL, long ms = -1);
+		int  waitAll(const std::list<CTask *> &sets, long ms = -1);
+		int  waitAny(const std::list<CTask *> &sets, long ms = -1);
 		
 		/* Watch the number of the pending tasks in @ms milliseconds.
 		 *	On success, ep_OK will be returned, or the error code will be returned.
 		 */
-		int  waitStat(long nMaxPendingTasks, long ms);
+		int  waitStat(long nMaxPendingTasks, long ms = -1);
 
 		/* If the user has called @enableQueue(false) to disable queueing the task,
 		 * ep_ENJECT will be returned by @queue if users call it to schedule the tasks.
@@ -156,7 +156,7 @@ class CTaskPool
 		 *
 		 *	On success, ep_OK will be returned, or the error code will be returned.
 		 */
-		int  waitQueueEnabled(long ms);
+		int  waitQueueEnabled(long ms = -1);
 	private:
 		int  extractErr(int libErr);
 		int  extractErr1(int waitErr);
@@ -176,7 +176,8 @@ class CTask
 		
 		/* Set the owner of the task. 
          *   NOTE: @setParent should be called firstly to set the task's parent 
-		 * before the task's delivering into the task pool.
+		 * before the task's delivering into the task pool if the task's parent
+		 * is not the destination task pool.
 		 */
 		int setParent(CTaskPool *p) {
 			if (p != m_parent) { 
@@ -250,53 +251,40 @@ class CTask
 	private:
 		friend class CTaskPool;
 		
+		/* Get the proxy object */
 		inline struct sttask_t *getProxy() const {return m_proxy;}
 	private:
 		struct sttask_t *m_proxy;
 		CTaskPool *m_parent;
 };
 
-/* In order to make the pool works effeciently, we allocate all tasks 
- * object in the memory pool */
 
-template<size_t spaces>
-class CPoolTask:public CTask
+/* In order to make the pool works effeciently, we allocate all tasks 
+ * object in the memory pool .*/
+template <typename T>
+class CPoolTask:public CTask, public CMObj<T>
 {
 	public:	
 		CPoolTask(CTaskPool *p = NULL, const char *taskName = "poolDummy"): 
-			CTask(reinterpret_cast<char *>(this) + spaces, taskName, p) {}
+			CTask(reinterpret_cast<char *>(this) + sizeof(T), taskName, p) {}
 		virtual ~CPoolTask() {}
 		
+		/* We implement our own operator new to expand the spaces for the proxy object */
 		inline void *operator new(size_t bytes) throw(std::bad_alloc)
 		{
-			static allocatorInitializer dummy;
-			assert(sm_allocator && bytes <= spaces);
-			
+			/* We use the dumy to initialize the @sm_allocator */
+			static typename CMObj<T>::allocatorInitializer dummy("poolTask", bytes + getProxySize());
+			assert(CMObj<T>::sm_allocator && bytes + getProxySize() == CMObj<T>::sm_allocator->size());
+
 			/* Allocate a object from the pool */
-			void *ptr = sm_allocator->alloc();
+			void *ptr = CMObj<T>::sm_allocator->alloc();
 			
 			if (!ptr)
 				throw std::bad_alloc();
 
 			return ptr;
 		}
-
-		inline void operator delete(void *ptr) throw()
-		{
-			if (ptr) 
-				sm_allocator->dealloc(ptr);
-		}
-	private:
-		struct allocatorInitializer
-		{
-			allocatorInitializer() {sm_allocator = CMPool::addAllocatorIfNoExist(spaces + getProxySize());}
-			~allocatorInitializer() {}
-		};
-		static CAllocator *sm_allocator;
 };
-
-template<size_t spaces>
-CAllocator *CPoolTask<spaces>::sm_allocator = NULL;
 
 #endif
 
