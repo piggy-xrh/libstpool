@@ -233,7 +233,8 @@ struct stpool_stat_t {
  * Return:
  * 		the object size of the task 
  */
-EXPORT size_t stpool_task_size();
+extern const size_t g_const_TASK_SIZE;
+#define stpool_task_size() g_const_TASK_SIZE
 
 
 /*@stpool_task_init

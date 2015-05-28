@@ -53,10 +53,19 @@ struct mpool_t {
 	void *init_data;
 };
 
+struct mpool_attr_t {
+	size_t  blk_size;
+	size_t  nmin_objs_cache;
+	int nmax_alloc;
+};
+
 int   mpool_init(struct mpool_t *mp, size_t objlen);
+void  mpool_attr_set(struct mpool_t *mp, struct mpool_attr_t *attr);
+struct mpool_attr_t *mpool_attr_get(struct mpool_t *mp, struct mpool_attr_t *attr);
 int   mpool_add_buffer(struct mpool_t *mp, void *buffer, size_t size, mbuffer_free mfree);
 void *mpool_new(struct mpool_t *mp);
 void  mpool_delete(struct mpool_t *mp, void *ptr);
+void  mpool_flush(struct mpool_t *mp);
 struct mpool_stat_t *mpool_stat(struct mpool_t *mp, struct mpool_stat_t *stat);
 const char *mpool_stat_print(struct mpool_t *mp, char *buffer, size_t len);
 int   mpool_blkstat_walk(struct mpool_t *mp, int (*walkstat)(struct mpool_blkstat_t *stat, void *arg), void *arg);

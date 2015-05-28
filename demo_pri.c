@@ -6,7 +6,7 @@
 
 #ifdef _WIN32
 #include <Windows.h>
-#pragma comment(lib, "stpool.lib")
+#pragma comment(lib, "libstpool.lib")
 #define msleep Sleep
 #else
 #define msleep(x) usleep(x * 1000)

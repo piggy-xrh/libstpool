@@ -56,6 +56,8 @@ struct mpool_init_data_t {
 	size_t mbnum;
 	size_t nacquires;
 	uint64_t left;
+	uint64_t allocated;
+	struct mpool_attr_t attr;
 	OSPX_pthread_mutex_t lock;
 };
 
@@ -69,6 +71,11 @@ struct mpool_obj_ptr_t {
 
 #define ACQUIRE_LOCK(mp) OSPX_pthread_mutex_lock(&MPOOL_data(mp)->lock)
 #define RELEASE_LOCK(mp) OSPX_pthread_mutex_unlock(&MPOOL_data(mp)->lock)
+
+static struct mpool_attr_t m_default_attr = {
+	PAGE_SIZE, 15, -1 
+};
+
 int   
 mpool_init(struct mpool_t *mp, size_t objlen) {
 	size_t i;
@@ -99,7 +106,40 @@ mpool_init(struct mpool_t *mp, size_t objlen) {
 	for (i=0; i<initd->mbnum; i++) 
 		INIT_HLIST_HEAD(&initd->mbase[i]);
 	mp->init_data = (void *)initd;
+	mpool_attr_set(mp, &m_default_attr);
+	
 	return 0;
+}
+
+void mpool_attr_set(struct mpool_t *mp, struct mpool_attr_t *attr)
+{
+	/* Check the attribute */
+	if (attr->blk_size < 1024 * 4)
+		attr->blk_size = 1024 * 4;
+
+	if (attr->nmax_alloc < 0)
+		attr->nmax_alloc = -1;
+
+	if (attr->nmin_objs_cache < 0)
+		attr->nmin_objs_cache = 0;
+	
+	ACQUIRE_LOCK(mp);
+	MPOOL_data(mp)->attr = *attr;
+	RELEASE_LOCK(mp);
+}
+
+struct mpool_attr_t *mpool_attr_get(struct mpool_t *mp, struct mpool_attr_t *attr)
+{
+	static struct mpool_attr_t slattr;
+	
+	if (!attr)
+		attr = &slattr;
+
+	ACQUIRE_LOCK(mp);
+	*attr = MPOOL_data(mp)->attr;
+	RELEASE_LOCK(mp);
+	
+	return attr;
 }
 
 static struct mpool_blk_t *
@@ -282,18 +322,27 @@ mpool_new(struct mpool_t *mp) {
 	struct mpool_init_data_t *initd = MPOOL_data(mp);
 
 	ACQUIRE_LOCK(mp);
-	if (!list_empty(&initd->mq)) 
-		blk = list_entry(initd->mq.next, struct mpool_blk_t, link);
 	++ initd->nacquires;
 	
+	/* Verify the throttle */
+	if (initd->attr.nmax_alloc >= 0 && initd->allocated >= initd->attr.nmax_alloc) {
+		RELEASE_LOCK(mp);
+		return NULL;
+	}
+
+	if (!list_empty(&initd->mq)) 
+		blk = list_entry(initd->mq.next, struct mpool_blk_t, link);
+
 	/* We try to create a new blok if there are none
 	 * enough spaces.
 	 */
 	if (!blk) {
+		int cache = initd->attr.nmin_objs_cache;
+		int length = (mp->objlen * (cache ? cache : 1) + initd->attr.blk_size - 1) / 
+				initd->attr.blk_size * initd->attr.blk_size;
 		RELEASE_LOCK(mp);
-		blk = mpool_new_blk(mp, NULL,
-				(mp->objlen * 15  + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE, NULL);
-		if (!blk)
+	
+		if (!(blk = mpool_new_blk(mp, NULL, length, NULL)))
 			return NULL;
 	}
 	/* Get a obj from the block */
@@ -355,6 +404,8 @@ mpool_new(struct mpool_t *mp) {
 		}
 	}		
 	-- initd->left;
+	++ initd->allocated;
+
 	//assert_ptr(mp, ptr, 1, __FUNCTION__, __LINE__);
 	RELEASE_LOCK(mp);
 	
@@ -391,11 +442,13 @@ mpool_delete(struct mpool_t *mp, void *ptr) {
 			
 			++ blk->left;
 			++ initd->left;
+			-- initd->allocated;
+			
 			if (1 == blk->left) 
 				list_add(&blk->link, &initd->mq);
 
 			else if (blk->left == blk->num) {
-				release = (initd->left >= (blk->left + 5));
+				release = (initd->left >= (blk->left + initd->attr.nmin_objs_cache));
 				
 				/* Should we release the block ? */
 				if (release) {
@@ -518,6 +571,36 @@ mpool_stat_print(struct mpool_t *mp, char *buffer, size_t len) {
 			st.nblks);
 
 	return buffer;
+}
+
+void mpool_flush(struct mpool_t *mp)
+{
+	struct mpool_blk_t *blk;
+	struct mpool_init_data_t *initd = MPOOL_data(mp);
+	
+	for (;;) {
+		ACQUIRE_LOCK(mp);
+		if (list_empty(&initd->mq) ||
+			(blk = list_entry(initd->mq.prev, struct mpool_blk_t, link),
+			blk->left != blk->num)) {
+			RELEASE_LOCK(mp);
+			break;
+		}
+
+		/* Remove the blk */
+		list_del(&blk->link);
+		hlist_del(&blk->base_link);
+		
+		assert(initd->left >= blk->left &&
+			  initd->mqnarray[blk->slot] >= 0);
+		initd->left -= blk->left;
+		-- initd->mqnarray[blk->slot];
+		RELEASE_LOCK(mp);
+
+		if (blk->mfree)
+			blk->mfree(blk->base);
+		free(blk);
+	}
 }
 
 void

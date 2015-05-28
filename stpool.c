@@ -30,6 +30,8 @@
 #include "stpool.h"
 #include "tpool.h"
 
+const size_t g_const_TASK_SIZE = sizeof(struct task_t);
+
 /* stpool is just a simple Wrapper of the tpool */
 
 static struct mpool_t *gs_mp = NULL;
@@ -42,11 +44,6 @@ stpool_version() {
 static void
 tpool_hook_atexit(struct tpool_t *pool, void *arg) {
 	free(pool);
-}
-
-size_t 
-stpool_task_size() {
-	return sizeof(struct task_t);
 }
 
 void   
@@ -165,7 +162,9 @@ stpool_create(int maxthreads, int minthreads, int suspend, int pri_q_num) {
 			tpool_atexit(pool, tpool_hook_atexit, NULL);	
 			
 			/* Enable caching the task objects for @tpool_add_routine */
+		#ifndef _DISABLE_MPOOL	
 			tpool_use_mpool(pool);
+		#endif
 		}
 	}
 

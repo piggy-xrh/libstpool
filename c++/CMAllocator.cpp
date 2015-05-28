@@ -43,15 +43,17 @@ CMAllocator::~CMAllocator()
 
 long CMAllocator::addRef()
 {
-	return OSPX_interlocked_add(&m_ref, 1);
+	return OSPX_interlocked_increase(&m_ref);
 }
 
 long CMAllocator::release()
 {
-	long ref = OSPX_interlocked_add(&m_ref, -1);
+	long ref = OSPX_interlocked_decrease(&m_ref);
 
 	if (!ref)
 		delete this;
+
+	return ref;
 }
 
 CAllocator *CMAllocator::clone(const char *desc) throw(std::bad_alloc)
@@ -81,7 +83,7 @@ void  CMAllocator::flush()
 CAllocator::Attr &CMAllocator::setAttr(Attr &attr) 
 {
 	struct mpool_attr_t at = {
-		attr.nBlkSize, attr.nMaxAlloc, attr.nMinCache
+		attr.nBlkSize, attr.nMinCache, attr.nMaxAlloc 
 	};
 	
 	mpool_attr_set(&m_mp, &at);

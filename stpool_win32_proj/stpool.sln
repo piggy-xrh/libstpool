@@ -3,6 +3,8 @@ Microsoft Visual Studio Solution File, Format Version 10.00
 # Visual Studio 2008
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "stpool", "stpool.vcproj", "{0898A3D0-4534-4989-8DA1-C25FD2902117}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "c++", "c++\c++.vcproj", "{762C3E6A-2352-40C2-8E2A-826B5707D61E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -13,6 +15,10 @@ Global
 		{0898A3D0-4534-4989-8DA1-C25FD2902117}.Debug|Win32.Build.0 = Release|Win32
 		{0898A3D0-4534-4989-8DA1-C25FD2902117}.Release|Win32.ActiveCfg = Release|Win32
 		{0898A3D0-4534-4989-8DA1-C25FD2902117}.Release|Win32.Build.0 = Release|Win32
+		{762C3E6A-2352-40C2-8E2A-826B5707D61E}.Debug|Win32.ActiveCfg = Release|Win32
+		{762C3E6A-2352-40C2-8E2A-826B5707D61E}.Debug|Win32.Build.0 = Release|Win32
+		{762C3E6A-2352-40C2-8E2A-826B5707D61E}.Release|Win32.ActiveCfg = Release|Win32
+		{762C3E6A-2352-40C2-8E2A-826B5707D61E}.Release|Win32.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

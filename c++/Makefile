@@ -21,7 +21,7 @@ VPATH =.:../src:..
 
 CFLAGS  =-Isrc -s -O2 -DNDEBUG -D_GNU_SOURCE -fPIC 
 
-CFLAGS  =-Isrc -g -D_GNU_SOURCE -fPIC
+#CFLAGS  =-Isrc -g -D_GNU_SOURCE -fPIC
 
 CFLAGS += -D_DISABLE_MPOOL -I. -I../src -I..
 ARFLAGS = -rv

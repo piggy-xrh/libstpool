@@ -154,16 +154,27 @@ int OSPX_gettimeofday(struct timeval *tv, struct timezone *tz) {
 pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 
 long  
-OSPX_interlocked_add(long volatile *target, long inc) {
-	long ret_val;
+OSPX_interlocked_increase(long volatile *target) {
+	long ret;
 
 	pthread_mutex_lock(&g_lock);
-	*target += inc;
-	ret_val = *target;
+	ret = ++ *target;
 	pthread_mutex_unlock(&g_lock);
 
-	return ret_val;
+	return ret;
 }
+
+long  
+OSPX_interlocked_decrease(long volatile *target) {
+	long ret;
+	
+	pthread_mutex_lock(&g_lock);
+	ret = -- *target;
+	pthread_mutex_unlock(&g_lock);
+
+	return ret;
+}
+
 #endif
 
 /**************************************OSPX_thread*******************/

@@ -4,6 +4,10 @@ using namespace std;
 
 #include "CTaskPool.h"
 
+#ifdef _WIN32
+#pragma comment(lib, "libstpoolc++.lib")
+#endif
+
 class myTask:public CPoolTask<myTask>
 {
 	public:
@@ -71,7 +75,7 @@ int main()
 	/* Shutdown the pool */
 	pool->release();
 	
-	/* Look up the pool */
+	/* Print the memory pool status */
 	cout << CMPool::report(s) << endl;
 	cout << "\nafter FLUSH.\n" << endl;
 	CMPool::flush();

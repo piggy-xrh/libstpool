@@ -31,6 +31,15 @@
 #include <list>
 #include "CMPool.h"
 
+#ifdef _WIN32
+#ifdef _USRDLL
+#define EXPORT __declspec(dllexport)
+#else
+#define EXPORT
+#endif
+#else
+#define EXPORT
+#endif
 class  CTask;
 
 /* Status of the pool.
@@ -96,7 +105,7 @@ enum
 /* Note:
  * 	  CTaskPool is just a simple wrapper of libstpool for c++ 
  */
-class CTaskPool
+class EXPORT CTaskPool
 {
 		CTaskPool()  {}
 		~CTaskPool() {}
@@ -164,7 +173,7 @@ class CTaskPool
 		void *m_proxyHandle;
 };
 
-class CTask
+class EXPORT CTask
 {		
 	public:	
 		CTask(void *cproxy, const char *taskName = "dummy", CTaskPool *p = NULL);
@@ -262,7 +271,7 @@ class CTask
 /* In order to make the pool works effeciently, we allocate all tasks 
  * object in the memory pool .*/
 template <typename T>
-class CPoolTask:public CTask, public CMObj<T>
+class EXPORT CPoolTask:public CTask, public CMObj<T>
 {
 	public:	
 		CPoolTask(CTaskPool *p = NULL, const char *taskName = "poolDummy"): 

@@ -30,7 +30,17 @@
 #include <string>
 #include <map>
 
-class CAllocator
+#ifdef _WIN32
+#ifdef _USRDLL
+#define EXPORT __declspec(dllexport)
+#else
+#define EXPORT
+#endif
+#else
+#define EXPORT
+#endif
+
+class EXPORT CAllocator
 {
 	public:
 		CAllocator(const char *desc, size_t bytes): 
@@ -57,7 +67,7 @@ class CAllocator
 		{
 			bool bReadOnly;
 			size_t nMinCache;
-			ssize_t nMaxAlloc;
+			int nMaxAlloc;
 			size_t nBlkSize;
 		};
 		virtual Attr &setAttr(Attr &attr) = 0;
@@ -72,7 +82,7 @@ class CAllocator
 			size_t nAcquired;
 			size_t nBlks;
 			size_t nMinCache;
-			ssize_t nMaxAlloc;
+			int nMaxAlloc;
 			size_t  nBlkSize;
 		};
 		virtual Stat &stat(Stat &s) = 0;
@@ -82,7 +92,7 @@ class CAllocator
 };
 
 /* CMPool is created to manager the object allocators */
-class CMPool
+class EXPORT CMPool
 {
 	public:
 		static CAllocator *create(const char *desc, size_t bytes) throw(std::bad_alloc);
@@ -111,7 +121,7 @@ class CMPool
 
 /* We provide a common object pool template */
 template<typename T>
-class CMObj
+class EXPORT CMObj
 {
 	public:	
 		inline void *operator new(size_t bytes) throw(std::bad_alloc)

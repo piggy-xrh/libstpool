@@ -80,7 +80,8 @@ EXPORT OSPX_pthread_t OSPX_pthread_self();
 #define OSPX_msleep(rest) usleep(rest * 1000)
 #define OSPX_sleep(rest)  sleep(rest)
 #define OSPX_gettimeofday gettimeofday
-EXPORT  long OSPX_interlocked_add(long volatile *target, long inc);
+EXPORT  long OSPX_interlocked_increase(long volatile *target);
+EXPORT  long OSPX_interlocked_decrease(long volatile *target);
 
 /* NOTE: The return value of the interfaces below is 
  * the same as the POSIX interfaces.
@@ -135,8 +136,8 @@ EXPORT int OSPX_sem_timedwait(OSPX_sem_t *sem, long *timeout /*ms*/);
 #define OSPX_msleep(rest) Sleep(rest)
 #define OSPX_sleep(rest)  Sleep(rest * 1000)
 EXPORT int OSPX_gettimeofday(struct timeval *, struct timezone *);
-#define OSPX_interlocked_add(target, inc) InterlockedAdd(target, inc)
-#define OSPX_interlocked_exchange(targe, val) InterlockedExchange(target, val)
+#define OSPX_interlocked_increase(target) InterlockedIncrement(target)
+#define OSPX_interlocked_decrease(target) InterlockedDecrement(target)
 
 #define OSPX_pthread_key_create(key)       (*(key) = TlsAlloc(), -1 == *(key) ? ENOMEM : 0)
 #define OSPX_pthread_key_delete(key)       (TlsFree(key) ? 0 : EINVAL)
