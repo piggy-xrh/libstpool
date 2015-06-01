@@ -395,6 +395,9 @@ tpool_create(struct tpool_t  *pool, int q_pri, int maxthreads, int minthreads, i
 			pool->threads_wait_throttle);
 #endif
 	/* Start up the reserved threads */
+	pool->thattr.stack_size = 1024 * 1024 * 2;
+	pool->thattr.sche_policy = ep_NONE;
+
 	if (pool->minthreads > 0) {
 		OSPX_pthread_mutex_lock(&pool->mut);
 		tpool_add_threads(pool, NULL, pool->minthreads, 0);
@@ -2324,7 +2327,7 @@ do_create_threads(struct tpool_thread_t *self) {
 		struct tpool_thread_t *th = list_entry(self->thq.next, 
 					struct tpool_thread_t, link_free);
 		
-		if ((errno = OSPX_pthread_create(&th->thread_id, 0, tpool_thread_entry, th))) {
+		if ((errno = OSPX_pthread_create(&th->thread_id, &self->pool->thattr, tpool_thread_entry, th))) {
 			__SHOW_ERR__("pthread_create error", errno);
 			break;
 		}
@@ -2545,7 +2548,7 @@ tpool_add_threads(struct tpool_t *pool, struct tpool_thread_t *self, int nthread
 		 */
 		tpool_addref_l(pool, 0, dummy_null_lptr);	
 		if (!self) {
-			if ((errno = OSPX_pthread_create(&th->thread_id, 0, tpool_thread_entry, th))) {
+			if ((errno = OSPX_pthread_create(&th->thread_id, &pool->thattr, tpool_thread_entry, th))) {
 				__SHOW_ERR__("pthread_create error", errno);
 				tpool_release_l(pool, 0, dummy_null_lptr);
 				if (th->structure_release)

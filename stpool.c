@@ -26,6 +26,7 @@
 
 #include <assert.h>
 
+#include "ospx.h"
 #include "mpool.h"
 #include "stpool.h"
 #include "tpool.h"
@@ -170,6 +171,31 @@ stpool_create(int maxthreads, int minthreads, int suspend, int pri_q_num) {
 
 	return (HPOOL)pool;
 }
+
+void  
+stpool_thread_setscheattr(HPOOL hp, struct stpool_thattr_t *attr) {
+	OSPX_pthread_attr_t att = {0};
+	struct tpool_t *pool = (struct tpool_t *)hp;
+
+	tpool_thread_getscheattr(pool, &att);
+	att.stack_size = attr->stack_size;
+	att.sche_policy = attr->ep_schep;
+	att.sche_priority = attr->sche_priority;
+	tpool_thread_setscheattr(pool, &att);
+}
+
+struct stpool_thattr_t *
+stpool_thread_getscheattr(HPOOL hp, struct stpool_thattr_t *attr) {
+	OSPX_pthread_attr_t att = {0};
+	
+	tpool_thread_getscheattr((struct tpool_t *)hp, &att);
+	attr->stack_size = att.stack_size;
+	attr->ep_schep = att.sche_policy;
+	attr->sche_priority = att.sche_priority;
+	
+	return attr;
+}
+
 
 long 
 stpool_addref(HPOOL hp) {	

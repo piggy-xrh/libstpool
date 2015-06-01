@@ -69,6 +69,8 @@ void tpool_task_getschattr(struct task_t *ptsk, struct xschattr_t *attr);
 
 /* --------------APIs about the pool ------------------- */
 int  tpool_create(struct tpool_t *pool, int q_pri, int maxthreads, int minthreads, int suspend);
+#define tpool_thread_getscheattr(pool, att) do {*(att) = (pool)->thattr;} while (0)
+#define tpool_thread_setscheattr(pool, att) do {(pool)->thattr = *(att);} while (0)
 void tpool_use_mpool(struct tpool_t *pool);
 void tpool_load_env(struct tpool_t *pool);
 void tpool_adjust_cache(struct tpool_t *pool, struct cache_attr_t *attr, struct cache_attr_t *oattr); 

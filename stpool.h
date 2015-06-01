@@ -222,6 +222,25 @@ struct stpool_stat_t {
 	size_t cur_tasks_removing;   /* The number of tasks who is marked removed */
 };
 
+enum ep_SCHE 
+{
+	ep_SCHE_NONE,
+	ep_SCHE_RR,
+	ep_SCHE_FIFO,
+	ep_SCHE_OTHER
+};
+
+struct stpool_thattr_t {
+	/* Stack size (0:default) */
+	int stack_size;
+
+	/* Schedule policy */
+	enum ep_SCHE ep_schep;
+
+	/* Schedule priority ([1-100] 0:default) */
+	int sche_priority;
+};
+
 /*----------------APIs about the task --------------*/
 
 /*@stpool_task_size
@@ -355,6 +374,9 @@ EXPORT const char *stpool_version();
  *		On success, @stpool_create returns a pool handle.  On error, NULL is returned, 
  */
 EXPORT HPOOL stpool_create(int maxthreads, int minthreads, int suspend, int pri_q_num);
+
+EXPORT void  stpool_thread_setscheattr(HPOOL hp, struct stpool_thattr_t *attr);
+EXPORT struct stpool_thattr_t *stpool_thread_getscheattr(HPOOL hp, struct stpool_thattr_t *attr);
 
 /*@stpool_addref
  *     Increase the reference of the pool. and the reference is 1 

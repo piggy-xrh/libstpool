@@ -112,6 +112,27 @@ CTaskPool *CTaskPool::createInstance(int maxThreads, int minThreads, bool bSuspe
 	return p;
 }
 
+void CTaskPool::setThreadAttr(const struct threadAttr &attr)
+{
+	assert(sizeof(attr) == sizeof(stpool_thattr_t));
+
+	stpool_thread_setscheattr(m_proxyHandle, 
+		reinterpret_cast<struct stpool_thattr_t *>
+		(
+			const_cast<struct threadAttr *>(&attr)
+		));	
+}
+
+struct threadAttr &CTaskPool::getThreadAttr(struct threadAttr &attr)
+{
+	assert(sizeof(attr) == sizeof(stpool_thattr_t));
+	
+	stpool_thread_setscheattr(m_proxyHandle, 
+		reinterpret_cast<struct stpool_thattr_t *>(&attr));
+
+	return attr;
+}
+
 long CTaskPool::addRef()
 {
 	return stpool_addref(m_proxyHandle);
@@ -265,8 +286,10 @@ long CTaskPool::taskStat(CTask *task, long &sm)
 {
 	struct stpool_tskstat_t stat = {0};
 	
-	stat.task = task->getProxy();
-	stpool_gettskstat(m_proxyHandle, &stat);
+	if (task->getParent() == this) {
+		stat.task = task->getProxy();
+		stpool_gettskstat(m_proxyHandle, &stat);
+	}
 	sm = stat.vmflags;
 		
 	return stat.stat;
@@ -284,9 +307,8 @@ void CTaskPool::resume()
 
 void CTaskPool::enableQueue(bool enable)
 {
-	stpool_throttle_enable(m_proxyHandle, enable ? 1 : 0);
+	stpool_throttle_enable(m_proxyHandle, enable ? 0 : 1);
 }
-
 
 int  CTaskPool::extractErr(int libErr)
 {
@@ -294,6 +316,7 @@ int  CTaskPool::extractErr(int libErr)
 		int libErr;
 		int epErr;
 	} epErrTable [] = {
+		{0, ep_OK},
 		{STPOOL_ERR_NOMEM, ep_NOMEM},
 		{STPOOL_ERR_DESTROYING, ep_DESTROYING},
 		{STPOOL_ERR_THROTTLE, ep_ENJECT},
@@ -304,7 +327,7 @@ int  CTaskPool::extractErr(int libErr)
 	for (int i=0; i<sizeof(epErrTable)/sizeof(*epErrTable); i++)
 		if (epErrTable[i].libErr == libErr)
 			return epErrTable[i].epErr;
-
+	
 	return ep_OTHER;
 }
 

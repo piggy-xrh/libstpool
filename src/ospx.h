@@ -55,7 +55,29 @@ EXPORT int  OSPX_library_init(long lflags);
 EXPORT void OSPX_library_end();
 
 /* Thread */
-EXPORT int OSPX_pthread_create(OSPX_pthread_t *handle, int joinable, int (*routine)(void *arglst), void *arglst);
+
+enum ep_POLICY
+{
+	ep_NONE,
+	ep_RR,
+	ep_FIFO,
+	ep_OTHER
+};
+
+typedef struct {
+	int joinable;
+
+	/* Stack size (0:default) */
+	int stack_size;    
+	
+	/* Schedule policy */
+	enum ep_POLICY sche_policy;
+	
+	/* Schedule priority ([1-100] 0:default) */
+	int sche_priority; 
+} OSPX_pthread_attr_t;
+
+EXPORT int OSPX_pthread_create(OSPX_pthread_t *handle, OSPX_pthread_attr_t *attr, int (*routine)(void *arg), void *arg);
 EXPORT int OSPX_pthread_join(OSPX_pthread_t handle, int *ret);
 EXPORT int OSPX_pthread_detach(OSPX_pthread_t handle);
 EXPORT OSPX_pthread_t OSPX_pthread_self();

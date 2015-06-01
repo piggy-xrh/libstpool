@@ -233,7 +233,7 @@ OSPX_thread_entry(void *arglst) {
 #endif
 
 EXPORT
-int OSPX_pthread_create(OSPX_pthread_t *handle, int joinable, int (*routine)(void *), void * arg) {
+int OSPX_pthread_create(OSPX_pthread_t *handle, OSPX_pthread_attr_t *attr, int (*routine)(void *arg), void *arg) {
 	OSPX_param_t *p;
 	
 	if (!(p = (OSPX_param_t *)calloc(1, sizeof(OSPX_param_t))))
@@ -244,12 +244,20 @@ int OSPX_pthread_create(OSPX_pthread_t *handle, int joinable, int (*routine)(voi
 	p->arglst  = arg;
 #ifdef _WIN32
 	{
+		static int PRIORITY[] = {
+			THREAD_PRIORITY_IDLE,
+			THREAD_PRIORITY_LOWEST,	 THREAD_PRIORITY_BELOW_NORMAL, 
+			THREAD_PRIORITY_NORMAL,  THREAD_PRIORITY_ABOVE_NORMAL,
+			THREAD_PRIORITY_HIGHEST, THREAD_PRIORITY_TIME_CRITICAL, 
+		};
+
 		HANDLE h;
+		int sche = NORMAL_PRIORITY_CLASS;
 		
 		/* In order to get the thread handle before the thread's running,
 		 * we suspend the thread and then resume it
 		 */
-		h = (HANDLE)_beginthreadex(NULL, 1024 * 1024 * 2, OSPX_thread_entry, p, CREATE_SUSPENDED, NULL);
+		h = (HANDLE)_beginthreadex(NULL, attr->stack_size, OSPX_thread_entry, p, CREATE_SUSPENDED, NULL);
 		if (errno) 
 			free(p);
 		else {
@@ -258,22 +266,77 @@ int OSPX_pthread_create(OSPX_pthread_t *handle, int joinable, int (*routine)(voi
 			*handle = h;
 			ResumeThread(h);
 
-			if (!joinable)
+			/* Set the schedule policy */
+			if (ep_NONE != attr->sche_policy) {	
+				switch (attr->sche_policy) {
+				case ep_RR:
+					sche = HIGH_PRIORITY_CLASS;
+					break;
+				case ep_FIFO:
+					sche = REALTIME_PRIORITY_CLASS;
+					break;
+				}
+				SetPriorityClass(h, sche);
+			}
+
+			/* Set the schedule priority */
+			if (attr->sche_priority > 0) {
+				int index = 0;
+
+				if (attr->sche_priority >= 100)
+					attr->sche_priority = 100;
+
+				index = attr->sche_priority * 7 / 100;
+				if (index >= 7)
+					-- index;
+				SetThreadPriority(h, PRIORITY[index]);
+			}
+
+			if (!attr->joinable)
 				CloseHandle(h);
 		}
 	}
 	return errno;
 #else
 	{
-		int error;
+		int error, sche = SCHED_OTHER;
 
-		pthread_attr_t *pattr = NULL, attr;
-		if (!pthread_attr_init(&attr)) {
-			pattr = &attr;
-			pthread_attr_setstacksize(pattr, 1024 * 1024 * 2);
-			if (!joinable) {
+		pthread_attr_t *pattr = NULL, att;
+		if (!pthread_attr_init(&att)) {
+			pattr = &att;
+			
+			/* Set the stack size */
+			if (attr->stack_size)
+				pthread_attr_setstacksize(pattr, attr->stack_size);
+			
+			/* Set the scope attributes */
+			if (!attr->joinable) {
 				pthread_attr_setscope(pattr, PTHREAD_SCOPE_SYSTEM);
 				pthread_attr_setdetachstate(pattr, PTHREAD_CREATE_DETACHED);	
+			}
+			
+			/* Set the schedule policy */
+			if (ep_NONE != attr->sche_policy) {	
+				switch (attr->sche_policy) {
+				case ep_RR:
+					sche = SCHED_RR;
+					break;
+				case ep_FIFO:
+					sche = SCHED_FIFO;
+					break;
+				}
+				pthread_attr_setschedpolicy(pattr, sche);
+			}
+	
+			if (attr->sche_priority > 0) {
+				int min = sched_get_priority_min(sche), max = sched_get_priority_max(sche);
+				struct sched_param param = {0};
+				
+				if (attr->sche_priority >= 100)
+					attr->sche_priority = 100;
+					
+				param.sched_priority = min + attr->sche_priority  * (max - min + 1) / 100;
+				pthread_attr_setschedparam(pattr, &param);
 			}
 		}
 		error = pthread_create(handle, pattr, OSPX_thread_entry, p);	

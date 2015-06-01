@@ -105,12 +105,38 @@ enum
 /* Note:
  * 	  CTaskPool is just a simple wrapper of libstpool for c++ 
  */
+struct threadAttr {
+	/* Thread stack size (0:default) */
+	int stackSize;
+
+	/* Thread schedule policy */
+	enum 
+	{
+		ep_SCHE_NONE,
+		ep_SCHE_RR,
+		ep_SCHE_FIFO,
+		ep_SCHE_OTHER
+	};
+	int ep;
+
+	/* Thread schedule priority ([1-100] 0:default) */
+	int priority;
+};
+
 class EXPORT CTaskPool
 {
 		CTaskPool()  {}
 		~CTaskPool() {}
 	public:			
-		static CTaskPool *createInstance(int maxThreads, int minThreads, bool bSuspend = false, int priQNum = 1);
+		/* Create a task pool instance, you should call @release to free it after 
+		 * having done your business */
+		static CTaskPool *createInstance(int maxThreads = 1, int minThreads = 0, bool bSuspend = false, int priQNum = 1);
+		
+		/* Set/Get the schedule attribute for the working threads */
+		void setThreadAttr(const struct threadAttr &attr);
+		struct threadAttr &getThreadAttr(struct threadAttr &attr);
+
+		/* Reference interfaces */
 		long addRef();
 		long release();
 		
@@ -118,15 +144,24 @@ class EXPORT CTaskPool
 		void adjustAbs(int maxThreads, int minThreads);
 		void adjust(int maxThreads, int minThreads);
 		
+		/* Get the pool status */
 		TaskPoolStat stat();
 		const std::string& stat(std::string &st);
+		
+		/* Get the task status. If the task does not exist in the pool now, it'll
+		 * return 0 */
 		long taskStat(CTask *task, long &sm);
 		
+		/* If @suspend is called by user, the pool will not schedule any tasks existing in
+		 * the pending queue until he calls @resume to notify pool */
 		void suspend(bool bWaitSchedulingTasks = false);
 		void resume();
+
+		/* If @enableQueue is called by user, anyone who calls @queue will gets a error
+		 * code (ep_ENJECT). */
 		void enableQueue(bool enable = true);
 
-		/* Deliver the task into the pending queue 
+		/* Deliver the task into the pool's pending queue 
 		 *   On success, ep_OK will be returned, or the error code will be returned. */
 		int  queue(CTask *task);
 		
@@ -142,6 +177,17 @@ class EXPORT CTaskPool
 		 * more details) */
 		void detach(CTask *task);
 		
+		/* If you want to wake up the WAIT functions such as @wait, @waitAll, @waitAny,
+		 * @waitStat and @waitQueueEnabled, you can save the wakeID by calling @getThreadID,
+		 * before your calling these WAIT functions, and then you can call @wakeup with wakeID 
+		 * to force the wait functions return with error code ep_WOKEUP.
+		 *
+		 *   model:
+		 *          thread1
+		 *      wakeID = getThreadID();
+		 *      wait();
+		 *                                 <------ wakeup(wakeID)
+		 */
 		long getThreadID();	
 		void wakeup(long threadID);
 		
@@ -257,7 +303,7 @@ class EXPORT CTask
 		 * the subclass will implement them to do his customed work. */
 		virtual int   onTask() = 0;
 		virtual void  onTaskComplete(long sm, int errCode) = 0;
-	private:
+	protected:
 		friend class CTaskPool;
 		
 		/* Get the proxy object */
@@ -274,7 +320,7 @@ template <typename T>
 class EXPORT CPoolTask:public CTask, public CMObj<T>
 {
 	public:	
-		CPoolTask(CTaskPool *p = NULL, const char *taskName = "poolDummy"): 
+		CPoolTask(const char *taskName = "poolDummy", CTaskPool *p = NULL): 
 			CTask(reinterpret_cast<char *>(this) + sizeof(T), taskName, p) {}
 		virtual ~CPoolTask() {}
 		

@@ -385,7 +385,8 @@ struct tpool_t {
 	int  ncont_completions, limit_cont_completions;
 	int  nthreads_real_sleeping, nthreads_real_pool;
 	OSPX_pthread_cond_t cond_ths;
-		
+	OSPX_pthread_attr_t thattr;
+
 	/* Statics report */
 	int64_t nthreads_peak, ntasks_peak;
 

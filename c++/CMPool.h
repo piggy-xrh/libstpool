@@ -47,6 +47,7 @@ class EXPORT CAllocator
 			m_desc(desc), m_bytes(bytes) {}
 		virtual ~CAllocator() {}
 
+		/* The object size */
 		size_t size() const {return m_bytes;}
 		const std::string &desc() const {return m_desc;}
 		
@@ -65,9 +66,18 @@ class EXPORT CAllocator
 		/* Attribute */
 		struct Attr
 		{
+			/* If @bReadOnly is true, then we can call @setAttr
+			 * to configure the allocator dynamically */
 			bool bReadOnly;
+
+			/* The min number of objects that should be cached for perfermance */
 			size_t nMinCache;
+
+			/* The max number of objects that can be received from the allocators */
 			int nMaxAlloc;
+
+			/* Each memory block size(4K/8K/16K/..) of the allocator.
+			 * block is the base unit for the allocator to expand the memories */
 			size_t nBlkSize;
 		};
 		virtual Attr &setAttr(Attr &attr) = 0;
@@ -76,11 +86,22 @@ class EXPORT CAllocator
 		/* Status */
 		struct Stat
 		{
+			/* The memory size that the allocator holds now */
 			size_t memHold;
+
+			/* The number of free objects existing in the cache */
 			size_t nCached;
+
+			/* The number of objects owned by users */
 			size_t nAllocated;
+
+			/* The requesting number of users */
 			size_t nAcquired;
+
+			/* The memory block number of the allocator holds now */
 			size_t nBlks;
+			
+			/* @nMinCache, @nMaxAlloc, @BlkSize */
 			size_t nMinCache;
 			int nMaxAlloc;
 			size_t  nBlkSize;
@@ -95,16 +116,31 @@ class EXPORT CAllocator
 class EXPORT CMPool
 {
 	public:
+		/* Create a default allocator */
 		static CAllocator *create(const char *desc, size_t bytes) throw(std::bad_alloc);
+		
+		/* Get a allocator from the memory pool according to the @bytes (or both @desc 
+		 * and @bytes), If none any allocator matches our request, then it'll add a 
+		 * default allocator, you should call @release to release it if it is useless
+		 * for you. */
 		static CAllocator *addIfNoExist(size_t bytes) throw(std::bad_alloc);
 		static CAllocator *addIfNoExist(const char *desc, size_t bytes) throw(std::bad_alloc);
 
+		/* Add a allocator into the memory pool */
 		static void add(CAllocator *allocator) throw(std::bad_alloc);
+		
+		/* Remove a allocator from the memory pool if it exists */
 		static void remove(CAllocator *allocator);
+
+		/* Flush all of the allocators existing in the memory pool */
 		static void flush();
 
+		/* Get a allocator from the memory pool according to @bytes or @desc,
+		 * you should call @release to release it if it is useless for you */
 		static CAllocator *get(size_t bytes);
 		static CAllocator *get(const char *desc);
+		
+		/* Get a report of all of the allocators */
 		static std::string &report(std::string &s);
 	private:
 		typedef std::multimap<size_t, CAllocator *> T;

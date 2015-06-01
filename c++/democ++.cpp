@@ -12,7 +12,7 @@ class myTask:public CPoolTask<myTask>
 {
 	public:
 		myTask(CTaskPool *p, bool autoFree = false): 
-			CPoolTask<myTask>(p, "mytask"), m_autoFree(autoFree) {}
+			CPoolTask<myTask>("mytask", p), m_autoFree(autoFree) {}
 		~myTask() {}
 
 	private:
@@ -48,8 +48,8 @@ class myTask:public CPoolTask<myTask>
 int main()
 {
 	/* Create a instance */
-	CTaskPool *pool = CTaskPool::createInstance(5, 0, false);
-		
+	CTaskPool *pool = CTaskPool::createInstance(5, 0, false);	
+
 	/* Print the status */
 	std::string s;
 	cout << pool->stat(s) << endl;
