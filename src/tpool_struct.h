@@ -337,7 +337,7 @@ struct tpool_t {
 	int  release_cleaning;
 	
 	/* Waiters' env */
-	int  waiters, suspend_waiters;
+	int  wokeup, waiters, suspend_waiters;
 	struct list_head wq;
 
 	/* Object memory pool */

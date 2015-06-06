@@ -962,12 +962,14 @@ tpool_adjust_wait(struct tpool_t *pool) {
 
 #define TRY_wakeup_waiters(pool, ptsk) \
 	do {\
-	 	if (pool->waiters) {\
-			if (ptsk->ref) \
+	 	if (pool->waiters && !pool->wokeup) {\
+			if (ptsk->ref){ \
 				OSPX_pthread_cond_broadcast(&pool->cond_comp);\
-			else if (list_empty(&pool->trace_q) ||\
+				pool->wokeup = 1; \
+			} else if (list_empty(&pool->trace_q) ||\
 				(pool->suspend_waiters && !pool->nthreads_running && !pool->ndispatchings)) {\
 				OSPX_pthread_cond_broadcast(&pool->cond_comp);\
+				pool->wokeup = 1;\
 			}\
 		}\
 	} while (0)
@@ -1629,7 +1631,8 @@ struct waiter_link_t {
 		struct waiter_link_t wl = {\
 			1, call, id, {0, 0}\
 		};\
-		list_add_tail(&wl.link, &(pool)->wq);
+		list_add_tail(&wl.link, &(pool)->wq); \
+		pool->wokeup = 0;\
 
 #define WPOP(pool, wokeup) \
 		list_del(&wl.link);\
