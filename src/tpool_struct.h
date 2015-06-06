@@ -102,6 +102,10 @@ enum {
 	
 	/* The task should be done again */
 	TASK_VMARK_DO_AGAIN = 0x0020,
+	
+	/* Task can(not) be delived into the pool */
+	TASK_VMARK_DISABLE_QUEUE = 0x0040,
+	TASK_VMARK_ENABLE_QUEUE = 0x0080,
 };
 
 
@@ -163,25 +167,26 @@ struct task_t {
 	struct tpool_thread_t *th;
 
 	/* The reference of the task */
-	uint16_t ref;
-
-	/* Whether the task has been detached to the pool */
-	uint16_t do_again:1;
-	uint16_t resv:15;
-	uint8_t *pdetached;
+	uint8_t ref;
+	uint8_t do_again:1;
+	uint8_t resv:7;
 
 	/* The priority attribute of the task */
 	uint16_t pri:7;
 	uint16_t pri_q:7;
 	uint16_t pri_policy:2;
+
+	/* Whether the task has been detached to the pool */
+	uint8_t *pdetached;
 	
 	/* Flags of the task */
 	union {
-		uint16_t f_flags;
+		uint32_t f_flags;
 		struct {
-			uint16_t f_stat:4;
-			uint16_t f_vmflags:6;
-			uint16_t f_mask:6;
+			uint32_t f_stat:8;
+			uint32_t f_vmflags:10;
+			uint32_t f_mask:6;
+			uint32_t resv:8;
 		};
 	} uflags0;
 #define f_flags    uflags0.f_flags

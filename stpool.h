@@ -80,6 +80,11 @@ enum {
 	 *  (@stpool_add_routine may return the error code)
 	 */
 	STPOOL_TASK_ERR_BUSY = 7,	
+	
+	/* The task has been marked with TASK_VMARK_DISABLE_QUEUE 
+	 *	 (@stpool_add_task may return the error code)
+	 */
+	STPOOL_TASK_ERR_DISABLE_QUEUE = 8,
 };
 
 struct sttask_t {
@@ -168,6 +173,13 @@ enum {
 	
 	/* The pool is being destroyed */
 	STTASK_VMARK_POOL_DESTROYING = 0x0010,		
+	
+	/* The task should be done again */
+	STTASK_VMARK_DO_AGAIN = 0x0020,
+
+	/* The task can(not) be delived into the pool */
+	STTASK_VMARK_DISABLE_QUEUE = 0x0040,		
+	STTASK_VMARK_ENABLE_QUEUE = 0x0080,		
 };
 
 /* The policy to schedule the tasks */
@@ -656,7 +668,8 @@ EXPORT int  stpool_add_routine(HPOOL hp,
  *                             @task_complete, and the vmflags passed to @task_complete will
  *                             be marked with STTASK_MARK_REMOVE.
  * Return:
- *      The number of tasks that have been removed.
+ *      If @ptsk is NULL, it returns the number of tasks that have been removed, or the task's 
+ *  @vmflags will be returned.
  */
 EXPORT int  stpool_remove_pending_task(HPOOL hp, struct sttask_t *ptsk, int dispatched_by_pool);
 

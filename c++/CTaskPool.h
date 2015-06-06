@@ -160,12 +160,13 @@ class EXPORT CTaskPool
 		/* If @enableQueue is called by user, anyone who calls @queue will gets a error
 		 * code (ep_ENJECT). */
 		void enableQueue(bool enable = true);
+		int  enableQueueOnTask(CTask *task = NULL, bool enable = true);
 
 		/* Deliver the task into the pool's pending queue 
 		 *   On success, ep_OK will be returned, or the error code will be returned. */
 		int  queue(CTask *task);
 		
-		/* Remove the task from the pending queue 
+		/* @remove makes sure that the task will be removed from the pending queue.
 		 *   On success, ep_OK will be returned, or the error code will be returned. */
 		int  remove(CTask *task);
 		
@@ -234,15 +235,24 @@ class EXPORT CTask
 		 * before the task's delivering into the task pool if the task's parent
 		 * is not the destination task pool.
 		 */
-		int setParent(CTaskPool *p) {
+		inline int setParent(CTaskPool *p) {
 			if (p != m_parent) { 
+				long _sm = 0;
+
 				/* We do not reset the parent if the task
 				 * has not been finished */
-				if (m_parent && stat())
+				if (m_parent && stat(_sm))
 					return ep_BUSY;
-				m_parent = p;	
-			}
-			return 0;
+
+				m_parent = p;
+				
+				/* We remove the sm_DISABLE_QUEUE if the task's parent has 
+				 * been changed */
+				if (p && (_sm & CTask::sm_DISABLE_QUEUE))
+					return p->enableQueueOnTask(this, true);
+			} else
+				m_parent = p;
+			return ep_OK;
 		}
 		inline CTaskPool *getParent() const {return m_parent;}
 		
@@ -275,10 +285,19 @@ class EXPORT CTask
 		/* The task status */
 		enum 
 		{
+			/* The task is in the pool's pending queue */
 			st_PENDING = 0x01,
+
+			/* The task is being scheduled */
 			st_SCHEDULING = 0x02,
+			
+			/* The task has been swapped since the pool is suspended */
 			st_SWAPED = 0x04,
+
+			/* The task has been removed from the pending queue */
 			st_DISPATCHING = 0x08,
+
+			/* The task is in progress, and it has been requested to be scheduled again */
 			st_WPENDING = 0x10
 		};
 		inline long stat() {long dummy; return stat(dummy);}
@@ -289,15 +308,29 @@ class EXPORT CTask
 			/* sm_DONE will only be passed to @onTaskComplete by the pool */
 			sm_DONE  = 0x01,
 			
+			/* The task has been removed from the pending queue, and the
+			 * task's completion routine will be called as soon as possible. */
 			sm_REMOVED_BYPOOL = 0x04,
 			sm_REMOVED = 0x08,
-			sm_DESTROYING = 0x10,
+			
+			/* The pool is being destroyed */
+			sm_POOL_DESTROYING = 0x10,
+			
+			/* The task will be queued again automatically after its done */
+			sm_ONCE_AGAIN = 0x20,
+			
+			/* The task is not allowed to dilived into the pool */
+			sm_DISABLE_QUEUE = 0x40
 		};
+		/* Note: 	All of the task's marks except sm_DISABLE_QUEUE will be cleared
+		 *      after it having been delived into the parent's pending queue by @queue
+		 */
 		inline long sm()   {long sm0; stat(sm0); return sm0;}
 		
-		inline int queue()  {return m_parent ? m_parent->queue(this) : ep_PARENT;}
-		inline int remove() {return m_parent ? m_parent->remove(this) : ep_OK;}
-		inline int wait(long ms = -1) {return m_parent ? m_parent->wait(this, ms) : ep_OK;}
+		inline int  queue()  {return m_parent ? m_parent->queue(this) : ep_PARENT;}
+		inline int  remove() {return m_parent ? m_parent->remove(this) : ep_OK;}
+		inline int  wait(long ms = -1) {return m_parent ? m_parent->wait(this, ms) : ep_OK;}
+		inline int  enableQueue(bool enable = true) {return m_parent ? m_parent->enableQueueOnTask(this, enable) : ep_OK;}
 
 		/* The working routine and completion routine of the task.
 		 * the subclass will implement them to do his customed work. */

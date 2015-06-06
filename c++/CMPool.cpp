@@ -164,7 +164,6 @@ std::string &CMPool::report(std::string &s)
 	char r[300];
 	CAllocator::Stat st;
 
-	s.clear();
 	CLocker locker(sm_lock);
 	for (T::iterator it = sm_ap.begin(), end = sm_ap.end();
 		it != end; it ++) {

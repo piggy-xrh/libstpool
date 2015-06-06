@@ -321,19 +321,11 @@ stpool_add_routine(HPOOL hp,
 
 int  
 stpool_remove_pending_task(HPOOL hp, struct sttask_t *ptsk, int dispatched_by_pool) {
-	int ele = 0;
-
-	if (ptsk) {
-		long lflags = dispatched_by_pool ? TASK_VMARK_REMOVE_BYPOOL
-			: TASK_VMARK_REMOVE_DIRECTLY;
-			
-		lflags = tpool_mark_task((struct tpool_t *)hp, (struct task_t *)ptsk, lflags);	
-		if (lflags & TASK_VMARK_REMOVE)
-			++ ele;
-	} else 
-		ele = tpool_remove_pending_task((struct tpool_t *)hp, dispatched_by_pool);
-
-	return ele;
+	if (ptsk) 
+		return tpool_mark_task((struct tpool_t *)hp, (struct task_t *)ptsk, 
+							dispatched_by_pool ? TASK_VMARK_REMOVE_BYPOOL : TASK_VMARK_REMOVE_DIRECTLY);
+	else 
+		return tpool_remove_pending_task((struct tpool_t *)hp, dispatched_by_pool);
 }
 
 void 

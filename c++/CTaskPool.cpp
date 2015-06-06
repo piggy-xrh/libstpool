@@ -310,6 +310,17 @@ void CTaskPool::enableQueue(bool enable)
 	stpool_throttle_enable(m_proxyHandle, enable ? 0 : 1);
 }
 
+int CTaskPool::enableQueueOnTask(CTask *task, bool enable)
+{
+	long lflags = enable ? STTASK_VMARK_ENABLE_QUEUE : STTASK_VMARK_DISABLE_QUEUE;
+	
+	if (task && task->getParent() != this)
+		return ep_PARENT;
+
+	stpool_mark_task(m_proxyHandle, task ? task->getProxy() : NULL, lflags);
+	return ep_OK;
+}
+
 int  CTaskPool::extractErr(int libErr)
 {
 	static struct {
@@ -320,10 +331,11 @@ int  CTaskPool::extractErr(int libErr)
 		{STPOOL_ERR_NOMEM, ep_NOMEM},
 		{STPOOL_ERR_DESTROYING, ep_DESTROYING},
 		{STPOOL_ERR_THROTTLE, ep_ENJECT},
+		{STPOOL_TASK_ERR_DISABLE_QUEUE, ep_ENJECT},
 		{STPOOL_TASK_ERR_REMOVED, ep_REMOVED},
 		{STPOOL_TASK_ERR_BUSY, ep_PARENT},
 	};
-
+	
 	for (int i=0; i<sizeof(epErrTable)/sizeof(*epErrTable); i++)
 		if (epErrTable[i].libErr == libErr)
 			return epErrTable[i].epErr;

@@ -49,6 +49,9 @@ enum {
 	/* The task has been attached to a pool */
 	POOL_TASK_ERR_BUSY = 7,	
 	
+	/* The task has been marked with TASK_VMARK_DISABLE_QUEUE */
+	POOL_TASK_ERR_DISABLE_QUEUE = 8,
+
 	/* The errno has been set */
 	POOL_ERR_ERRNO = 0x1000,
 };

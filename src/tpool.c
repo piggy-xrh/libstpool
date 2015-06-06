@@ -358,7 +358,6 @@ tpool_create(struct tpool_t  *pool, int q_pri, int maxthreads, int minthreads, i
 	pool->limit_cont_completions = max(10, pool->maxthreads * 2 / 3);
 	pool->throttle_enabled = 0;
 	pool->acttimeo = 1000 * 20;
-	pool->randtimeo = 1000 * 60;
 	pool->threads_wait_throttle = 9;
 
 	/* Try to initiailize the priority queue */
@@ -479,7 +478,7 @@ tpool_load_env(struct tpool_t *pool) {
 	/* Load the @randomtimeo */
 	env = getenv("THREADS_RANDTIMEO");
 	if (!env || atoi(env) <= 0)	
-		pool->randtimeo = 5;
+		pool->randtimeo = 1000 * 60;
 	else
 		pool->randtimeo = atoi(env);
 	
@@ -609,7 +608,7 @@ tpool_release_ex(struct tpool_t *pool, int decrease_user, int wait_threads_on_cl
 #ifndef NDEBUG
 		{
 			time_t now;
-			
+		
 			fprintf(stderr, "%s\n",
 				tpool_status_print(pool, NULL, 0));
 			now = time(NULL);
@@ -763,14 +762,15 @@ tpool_status_print(struct tpool_t *pool, char *buffer, size_t bufferlen) {
 
 
 long 
-tpool_gettskstat(struct tpool_t *pool, struct tpool_tskstat_t *st) {
-	st->stat = 0;	
+tpool_gettskstat(struct tpool_t *pool, struct tpool_tskstat_t *st) {	
+	assert(!st->task->hp_last_attached || pool == st->task->hp_last_attached);
 	
-	if (st->task->f_stat) {
-		OSPX_pthread_mutex_lock(&pool->mut);
-		ACQUIRE_TASK_STAT(pool, st->task, st);
-		OSPX_pthread_mutex_unlock(&pool->mut);
-	}
+	OSPX_pthread_mutex_lock(&pool->mut);
+	ACQUIRE_TASK_STAT(pool, st->task, st);
+	OSPX_pthread_mutex_unlock(&pool->mut);
+	
+	if (st->task->hp_last_attached != pool) 
+		st->stat = st->task->f_stat;
 
 	return st->stat;
 }
@@ -1105,13 +1105,13 @@ tpool_mark_task(struct tpool_t *pool, struct task_t *ptsk, long lflags) {
 	int q, do_complete = 0, nGC_predicted = 0;
 	struct tpool_tskstat_t stat;	
 		
-	if (!ptsk || !ptsk->f_stat)
-		return 0;
-	
+	assert (ptsk);
+
 	/* Set the vmflags properly */
-	lflags &= TASK_VMARK_REMOVE;
-	q = ptsk->pri_q;
-	
+	lflags &= (TASK_VMARK_REMOVE|TASK_VMARK_DISABLE_QUEUE|TASK_VMARK_ENABLE_QUEUE);
+	if (TASK_VMARK_ENABLE_QUEUE & lflags)
+		lflags &= ~TASK_VMARK_DISABLE_QUEUE;
+	q = ptsk->pri_q;	
 	if (TASK_F_ONCE & ptsk->f_mask)
 		++ nGC_predicted;
 
@@ -1119,15 +1119,21 @@ tpool_mark_task(struct tpool_t *pool, struct task_t *ptsk, long lflags) {
 	ACQUIRE_TASK_STAT(pool, ptsk, &stat);
 	
 	nGC_predicted += pool->nGC;
-	/* Check whether the task should be removed */
-	if (!stat.stat) {
-		OSPX_pthread_mutex_unlock(&pool->mut);
-		return 0;
-	}
 	
+	if (TASK_VMARK_DISABLE_QUEUE & lflags) 
+		ptsk->f_vmflags |= TASK_VMARK_DISABLE_QUEUE;
+	
+	else if (TASK_VMARK_ENABLE_QUEUE & lflags) 
+		ptsk->f_vmflags &= ~TASK_VMARK_DISABLE_QUEUE;
+
+	/* Check whether the task should be removed */
+	if (!stat.stat || !lflags) {
+		OSPX_pthread_mutex_unlock(&pool->mut);
+		return -1;
+	}
+
 	if (TASK_VMARK_REMOVE & lflags) {
 		if (sl_const_allowed_rmflags & stat.stat) {
-			
 			/* Remove the @DO_AGAIN flag */
 			if (TASK_VMARK_DO_AGAIN & ptsk->f_vmflags) 
 				ptsk->f_vmflags &= ~TASK_VMARK_DO_AGAIN;	
@@ -1204,7 +1210,7 @@ int
 tpool_mark_task_ex(struct tpool_t *pool, 
 			long (*tskstat_walk)(struct tpool_tskstat_t *, void *),
 			void *arg) {	
-	long vmflags;
+	long vmflags, changed;
 	int  effected = 0, removed = 0, n_qdispatch = 0, nGC_predicted = 0;
 	struct list_head rmq, no_callback_q, pool_q, *q;
 	struct task_t *ptsk, *n;
@@ -1215,6 +1221,10 @@ tpool_mark_task_ex(struct tpool_t *pool,
 	INIT_LIST_HEAD(&pool_q);
 	OSPX_pthread_mutex_lock(&pool->mut);
 	list_for_each_entry_safe(ptsk, n, &pool->trace_q, struct task_t, trace_link) {
+		/* Skip the system task */
+		if (ptsk == &pool->sys_GC_notify_task)
+			continue;
+
 		ACQUIRE_TASK_STAT(pool, ptsk, &stat);
 		vmflags = tskstat_walk(&stat, arg);
 		if (-1 == vmflags)
@@ -1223,20 +1233,39 @@ tpool_mark_task_ex(struct tpool_t *pool,
 		assert(stat.stat);
 
 		/* Set the vmflags properly */
-		vmflags &= TASK_VMARK_REMOVE;
-		if (!vmflags || !(sl_const_allowed_rmflags & stat.stat)) 
+		vmflags &= (TASK_VMARK_REMOVE|TASK_VMARK_DISABLE_QUEUE|TASK_VMARK_ENABLE_QUEUE);
+		if (TASK_VMARK_ENABLE_QUEUE & vmflags)
+			vmflags &= ~TASK_VMARK_DISABLE_QUEUE;
+		
+		if (!vmflags) 
 			continue;
 		
+		changed = 0;
+		if (TASK_VMARK_DISABLE_QUEUE & vmflags) {
+			if (!(TASK_VMARK_DISABLE_QUEUE & ptsk->f_vmflags)) {
+				ptsk->f_vmflags |= TASK_VMARK_DISABLE_QUEUE;
+				changed = 1;
+			}
+		} else if (TASK_VMARK_ENABLE_QUEUE & vmflags) {
+			if (TASK_VMARK_DISABLE_QUEUE & vmflags) {
+				ptsk->f_vmflags &= ~TASK_VMARK_DISABLE_QUEUE;
+				changed = 1;
+			}
+		}
+		
+		/* Deal with the RM flags */
+		if (!(sl_const_allowed_rmflags & stat.stat)) {
+			if (changed)
+				++ effected;
+			continue;
+		}
+
 		++ effected;
 		if (TASK_VMARK_DO_AGAIN & ptsk->f_vmflags) {
 			ptsk->f_vmflags &= ~TASK_VMARK_DO_AGAIN;
 			continue;
 		}
-		
-		/* Skip the system task */
-		if (ptsk == &pool->sys_GC_notify_task)
-			continue;
-
+			
 		if (ptsk->do_again) {
 			assert(TASK_VMARK_REMOVE & ptsk->f_vmflags);
 			ptsk->do_again = 0;
@@ -1376,7 +1405,7 @@ tpool_add_task(struct tpool_t *pool, struct task_t *ptsk) {
 		}
 		
 		/* Is the task in the pending queue ? */
-		if (TASK_STAT_WAIT == ptsk->f_stat) {
+		if (TASK_STAT_WAIT & ptsk->f_stat) {
 			OSPX_pthread_mutex_unlock(&pool->mut);
 			return 0;
 		}
@@ -1387,11 +1416,17 @@ tpool_add_task(struct tpool_t *pool, struct task_t *ptsk) {
 			OSPX_pthread_mutex_unlock(&pool->mut);
 			return 0;
 		}
+			
 		goto ck;
 	}
-		
-	/* Record the pool */
-	ptsk->hp_last_attached = pool;
+	/* Is the task allowed to be delivered ? */
+	if (ptsk->hp_last_attached == pool) {
+		if (TASK_VMARK_DISABLE_QUEUE & ptsk->f_vmflags) {
+			OSPX_pthread_mutex_unlock(&pool->mut);
+			return POOL_TASK_ERR_DISABLE_QUEUE;
+		}
+	} else
+		ptsk->hp_last_attached = pool;
 	ptsk->th = NULL;
 ck:	
 	/* Check the pool status */
@@ -1443,7 +1478,7 @@ tpool_add_task_l(struct tpool_t *pool, struct task_t *ptsk) {
 
 	/* Reset the task's flag */
 	ptsk->f_stat = TASK_STAT_WAIT;
-	ptsk->f_vmflags = 0;
+	ptsk->f_vmflags &= TASK_VMARK_DISABLE_QUEUE;
 	
 	/* The flag TASK_F_ADJPRI is always be set when the task
 	 * is requested being rescheduled. */
@@ -2228,9 +2263,9 @@ tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
 		/* Initialize the random sed */
 		OSPX_srandom(time(NULL));
 		if (extra <= 5) 
-			self->last_to = pool->acttimeo + tpool_random(pool, self) % pool->randtimeo;
-		else
-			self->last_to = (long)tpool_random(pool, self) % 35000;
+			self->last_to = pool->acttimeo + (unsigned)tpool_random(pool, self) % pool->randtimeo;
+		else 
+			self->last_to = (unsigned)tpool_random(pool, self) % 35000;
 		if (self->last_to < 0) 
 			(self->last_to) &= 0x0000ffff;
 	} 

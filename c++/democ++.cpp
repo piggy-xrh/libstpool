@@ -58,8 +58,19 @@ int main()
 	myTask *task = new myTask(pool);
 	task->queue();
 	task->wait();
+	
+	task->enableQueue(false);
+	cout << "sm: 0x" << hex << task->sm() << " Err: " << dec << task->queue() << endl;
+	task->enableQueue(true);
+	cout << "sm: 0x" << hex << task->sm() << " Err: " << dec << task->queue() << endl;
+	task->wait();
 	delete task;
 	
+	if ('q' == cin.get()) {
+		pool->release();
+		return 0;
+	}
+
 	/* Test running amount of tasks */
 	pool->suspend();
 	for (int i=0; i<1000; i++) {
@@ -76,10 +87,10 @@ int main()
 	pool->release();
 	
 	/* Print the memory pool status */
-	cout << CMPool::report(s) << endl;
-	cout << "\nafter FLUSH.\n" << endl;
-	CMPool::flush();
-	cout << CMPool::report(s) << endl;
+	std::string r;
+	CMPool::report(r).append("\n\n***after FLUSH***\n");
+	CMPool::flush();	
+	cout << CMPool::report(r) << endl;
 
 	cin.get();
 	return 0;
