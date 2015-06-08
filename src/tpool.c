@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <assert.h>
+#include <math.h>
 
 #if !defined(NDEBUG) && !defined(_WIN32)
 #include <sys/prctl.h>
@@ -357,8 +358,9 @@ tpool_create(struct tpool_t  *pool, int q_pri, int maxthreads, int minthreads, i
 	pool->minthreads = minthreads;
 	pool->limit_cont_completions = max(10, pool->maxthreads * 2 / 3);
 	pool->throttle_enabled = 0;
-	pool->acttimeo = 1000 * 20;
-	pool->threads_wait_throttle = 9;
+	pool->acttimeo  = 1000 * 20;
+	pool->randtimeo = 1000 * 30;
+	pool->threads_wait_throttle = 2;
 
 	/* Try to initiailize the priority queue */
 	if (q_pri <= 0)
@@ -386,11 +388,9 @@ tpool_create(struct tpool_t  *pool, int q_pri, int maxthreads, int minthreads, i
 #ifndef NDEBUG
 	fprintf(stderr, ">@limit_threads_free=%d\n"
 				    ">@limit_threads_create_per_time=%d\n"
-					">@threads_randtimeo=%ld\n"
 					">@threads_wait_throttle=%ld\n",
 			pool->limit_threads_free, 
 			pool->limit_threads_create_per_time,
-			pool->randtimeo,
 			pool->threads_wait_throttle);
 #endif
 	/* Start up the reserved threads */
@@ -474,18 +474,11 @@ tpool_load_env(struct tpool_t *pool) {
 		pool->limit_threads_create_per_time = 2;
 	else
 		pool->limit_threads_create_per_time = atoi(env);
-	
-	/* Load the @randomtimeo */
-	env = getenv("THREADS_RANDTIMEO");
-	if (!env || atoi(env) <= 0)	
-		pool->randtimeo = 1000 * 60;
-	else
-		pool->randtimeo = atoi(env);
-	
+		
 	/* Load the @threads_wait_throttle */
 	env = getenv("THREADS_WAIT_THROTTLE");
 	if (!env || atoi(env) <= 0)	
-		pool->threads_wait_throttle = 9;
+		pool->threads_wait_throttle = 2;
 	else
 		pool->threads_wait_throttle = atoi(env);
 }
@@ -649,8 +642,9 @@ tpool_release(struct tpool_t *pool, int clean_wait) {
 }
 
 void 
-tpool_set_activetimeo(struct tpool_t *pool, long acttimeo) {
+tpool_set_activetimeo(struct tpool_t *pool, long acttimeo, long randtimeo) {
 	pool->acttimeo = acttimeo * 1000;
+	pool->randtimeo = randtimeo * 1000;
 }
 
 struct tpool_stat_t *
@@ -2248,7 +2242,7 @@ tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
 	if (pool->nthreads_real_sleeping + 1 <= pool->minthreads) 
 		self->last_to = -1; 
 	
-	else if (pool->nthreads_real_sleeping - pool->minthreads > pool->threads_wait_throttle) 
+	else if (pool->nthreads_real_sleeping - pool->minthreads >= pool->threads_wait_throttle) 
 		self->last_to = 0; 
 	
 	else if (self->ncont_rest_counters) {
@@ -2262,13 +2256,15 @@ tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
 		 * all the way may happen.
 		 */
 	} else {
-		int extra = (pool)->threads_wait_throttle - (pool)->nthreads_real_sleeping + (pool)->minthreads; 
+		int n = min(10, pool->nthreads_real_sleeping);
 		/* Initialize the random sed */
 		OSPX_srandom(time(NULL));
-		if (extra <= 5) 
-			self->last_to = pool->acttimeo + (unsigned)tpool_random(pool, self) % pool->randtimeo;
+
+		if (pool->nthreads_real_sleeping <= 4)
+			self->last_to = (pool->acttimeo + (unsigned)tpool_random(pool, self) % pool->randtimeo) / pow(2, n);
 		else 
-			self->last_to = (unsigned)tpool_random(pool, self) % 35000;
+			self->last_to = (unsigned)tpool_random(pool, self) % pool->randtimeo / pow(4, n);
+		
 		if (self->last_to < 0) 
 			(self->last_to) &= 0x0000ffff;
 	} 

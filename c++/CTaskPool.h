@@ -140,7 +140,7 @@ class EXPORT CTaskPool
 		long addRef();
 		long release();
 		
-		void setActiveTimeo(long actTimeo);
+		void setActiveTimeo(long actTimeo, long randTimeo);
 		void adjustAbs(int maxThreads, int minThreads);
 		void adjust(int maxThreads, int minThreads);
 		

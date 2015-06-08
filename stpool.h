@@ -440,7 +440,7 @@ EXPORT long stpool_release(HPOOL hp);
  * Return:
  *	  None
  */
-EXPORT void stpool_set_activetimeo(HPOOL hp, long acttimeo);
+EXPORT void stpool_set_activetimeo(HPOOL hp, long acttimeo, long randtimeo);
 
 /*@stpool_adjust_abs
  *     Adjust the threads number of the pool. this function does not

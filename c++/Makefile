@@ -2,7 +2,7 @@
 
 .PHONY:all clean
 
-#CROSS :=arm-hisiv200-linux-
+CROSS :=
 CC    :=$(CROSS)gcc
 CPP   :=$(CROSS)g++
 AR    :=$(CROSS)ar

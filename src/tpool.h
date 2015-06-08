@@ -80,7 +80,7 @@ void tpool_adjust_cache(struct tpool_t *pool, struct cache_attr_t *attr, struct 
 void tpool_atexit(struct tpool_t *pool, void (*atexit_func)(struct tpool_t *pool, void *arg), void *arg);
 long tpool_addref(struct tpool_t *pool);
 long tpool_release(struct tpool_t *pool, int clean_wait);
-void tpool_set_activetimeo(struct tpool_t *pool, long acttimeo);
+void tpool_set_activetimeo(struct tpool_t *pool, long acttimeo, long randtimeo);
 void tpool_adjust_abs(struct tpool_t *pool, int maxthreads, int minthreads);
 void tpool_adjust(struct tpool_t *pool, int maxthreads, int minthreads);
 int  tpool_flush(struct tpool_t *pool);

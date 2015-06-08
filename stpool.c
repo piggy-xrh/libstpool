@@ -215,8 +215,8 @@ stpool_load_env(HPOOL hp) {
 
 
 void 
-stpool_set_activetimeo(HPOOL hp, long acttimeo) {
-	tpool_set_activetimeo((struct tpool_t *)hp, acttimeo); 
+stpool_set_activetimeo(HPOOL hp, long acttimeo, long randtimeo) {
+	tpool_set_activetimeo((struct tpool_t *)hp, acttimeo, randtimeo); 
 }
 
 void 

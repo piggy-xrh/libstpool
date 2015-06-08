@@ -33,8 +33,6 @@ extern "C"
 #include "stpool.h"
 }
 
-char externPoolAllocatorName[] = "taskPool";
-
 static int doTaskWrapper(struct sttask_t *task)
 {
 	return reinterpret_cast<CTask *>
@@ -143,9 +141,9 @@ long CTaskPool::release()
 	return stpool_release(m_proxyHandle);
 }
 
-void CTaskPool::setActiveTimeo(long actTimeo)
+void CTaskPool::setActiveTimeo(long actTimeo, long randTimeo)
 {
-	stpool_set_activetimeo(m_proxyHandle, actTimeo);
+	stpool_set_activetimeo(m_proxyHandle, actTimeo, randTimeo);
 }
 
 void CTaskPool::adjustAbs(int maxThreads, int minThreads)
