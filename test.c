@@ -13,6 +13,7 @@ void test_complete(struct sttask_t *ptsk, long vmflags, int task_code)
 
 int main()
 {
+	int i;
 	HPOOL hp;
 
 	hp = stpool_create(1, 0, 0, 1);
@@ -25,9 +26,9 @@ int main()
 	printf("\n\n%s\n", stpool_status_print(hp, NULL, 0));
 	
 	stpool_add_routine(hp, "test", test_run, test_complete, NULL, NULL);
-
 	while ('q' != getchar())
-		stpool_add_routine(hp, "test", test_run, test_complete, NULL, NULL);
+		for (i=0; i<4; i++)
+			stpool_add_routine(hp, "test", test_run, test_complete, NULL, NULL);
 	
 	printf("%s\n", stpool_status_print(hp, NULL, 0));
 	stpool_release(hp);

@@ -40,8 +40,8 @@
 
 #ifndef min
 /* VS has defined the MARCO in stdlib.h */
-#define min(a, b) ((a) < (b)) ? (a) : (b)
-#define max(a, b) ((a) > (b)) ? (a) : (b)
+#define min(a, b) (((a) < (b)) ? (a) : (b))
+#define max(a, b) (((a) > (b)) ? (a) : (b))
 #endif
 
 #ifdef _WIN32
@@ -199,7 +199,7 @@ tpool_GC_run(struct task_t *ptsk) {
 #if !defined(NDEBUG) && !defined(_WIN32)
 	prctl(PR_SET_NAME, ptsk->task_name);
 #endif
-	printf("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++GC run.\n");
+	
 	/* Pay back the task objects to the system */
 	while (!list_empty(&th->clq)) {
 		obj = list_entry(th->clq.next, struct task_t, wait_link);
@@ -1561,12 +1561,12 @@ out:
 	 *  .Are there any FREE threads ?
 	 *  .Has the threads number arrived at the limit ?
 	 *  .Is pool paused ?
-	 */
-	if ((pool->n_qths + pool->nthreads_going_rescheduling) ==
+	 */	
+	if ((!pool->nthreads_real_pool || ((pool->n_qths + pool->nthreads_going_rescheduling) ==
 		(pool->nthreads_waiters + pool->nthreads_running) &&	
-		pool->maxthreads >= pool->nthreads_real_pool &&
+		pool->maxthreads >= pool->nthreads_real_pool)) &&
 		!pool->paused) 
-		tpool_increase_threads(pool, NULL);		
+		tpool_increase_threads(pool, NULL);	
 
 	/* Update the statics report */
 	if (pool->ntasks_peak < pool->npendings) 
@@ -2114,6 +2114,12 @@ tpool_thread_status_change(struct tpool_t *pool, struct tpool_thread_t *self, ui
 			-- pool->nthreads_real_sleeping;
 		}
 		
+		if (THREAD_STAT_LONG_RESTO & self->status) {
+			assert(pool->n_long_resto > 0);
+			self->status &= ~THREAD_STAT_LONG_RESTO;
+			-- pool->n_long_resto;
+		}
+		
 		/* Remove the thread from the wait queue */
 		list_del(&self->run_link);
 		-- pool->n_qths_wait;
@@ -2208,7 +2214,7 @@ tpool_gettask(struct tpool_t *pool, struct tpool_thread_t *self) {
 
 static inline void
 tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
-	int n = pool->nthreads_real_sleeping - pool->minthreads;
+	int extra = pool->nthreads_real_sleeping - pool->minthreads;
 
 	if ((THREAD_STAT_RM & (self)->status) || !(POOL_F_CREATED & pool->status)) {
 		self->last_to = 0;
@@ -2234,7 +2240,7 @@ tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
 		pool->GC = NULL;				 		
 	} 
 	
-	if (n <= -1) 
+	if (extra <= -1) 
 		self->last_to = -1; 
 	
 	else if (self->ncont_rest_counters) {	
@@ -2247,26 +2253,35 @@ tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
 		 * the bad situation that some threads can not get any tasks
 		 * all the way may happen.
 		 */
-		printf("fuck.\n");
-	} else if (n >= pool->threads_wait_throttle) 
-		self->last_to = (n > 2) ? 0 : 10 + (unsigned)tpool_random(pool, self) % 100;
-	
-	else {
-		int n = min(10, pool->nthreads_real_sleeping);
-		/* Initialize the random sed */
-		OSPX_srandom(time(NULL));
+	} else {
+		if (!pool->n_long_resto) {
+			++ pool->n_long_resto;
+			self->last_to = (pool->acttimeo + (unsigned)tpool_random(pool, self) % pool->randtimeo);
+			self->status |= THREAD_STAT_LONG_RESTO;
+		
+		} else if (pool->threads_wait_throttle && extra >= pool->threads_wait_throttle) {
+			extra -= pool->threads_wait_throttle;
+			
+			if (extra < 1)
+				self->last_to = (pool->acttimeo / 8 + (unsigned)tpool_random(pool, self) % pool->randtimeo) / 8;
+			else
+				self->last_to = (min(pool->acttimeo, 10)) + (unsigned)tpool_random(pool, self) % (min(pool->randtimeo, 100));
+		
+		} else {
+			int n = min(10, pool->nthreads_real_sleeping);
+		
+			/* Initialize the random sed */
+			OSPX_srandom(time(NULL));
 
-		if (pool->nthreads_real_sleeping <= 4)
-			self->last_to = (pool->acttimeo + (unsigned)tpool_random(pool, self) % pool->randtimeo) / pow(2, n);
-		else 
-			self->last_to = (unsigned)tpool_random(pool, self) % pool->randtimeo / pow(4, n);
+			if (pool->nthreads_real_sleeping <= 4) 
+				self->last_to = (pool->acttimeo + (unsigned)tpool_random(pool, self) % pool->randtimeo) / pow(2, n);
+			else 
+				self->last_to = (unsigned)tpool_random(pool, self) % pool->randtimeo / pow(4, n);
+		}
 		
 		if (self->last_to < 0) 
 			(self->last_to) &= 0x0000ffff;
-		printf("*****\n");
-	}
-
-	printf("nth:%d nsleeping:%d <%p> last_to:%d\n", pool->nthreads_real_pool, pool->nthreads_real_sleeping, self, self->last_to);
+	} 
 }
 
 
@@ -2445,7 +2460,7 @@ tpool_schedule(struct tpool_t *pool, struct tpool_thread_t *self) {
 
 static void
 tpool_task_complete(struct tpool_t *pool, struct tpool_thread_t *self, struct task_t *ptsk, int task_code) {	
-	assert(self || ptsk->task_complete);
+	assert(self || (ptsk->task_complete && !(self->task_type & TASK_TYPE_GC))); 
 
 	/* Call the completition routine to dispatch the result */
 	if (self) {
@@ -2533,8 +2548,7 @@ tpool_add_threads(struct tpool_t *pool, struct tpool_thread_t *self, int nthread
 			if (!(THREAD_STAT_RM & th->status)) 
 				continue;
 			
-			assert(!th->run && pool->nthreads_dying > 0 &&
-				  pool->nthreads_dying_run);
+			assert(!th->run && pool->nthreads_dying > 0); 
 
 			th->run = 1;
 			th->status &= ~THREAD_STAT_RM;
@@ -2635,50 +2649,52 @@ tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {
 	/* Check the pool status */
 	assert(ntasks_pending); 
 		
-	/* We forbidden the same thread creating working threads continuously */
-	if (pool->launcher) {
-		if ((self && self->thread_id == pool->launcher) ||
-			(!self && OSPX_pthread_id() == pool->launcher)) {
+	if (pool->nthreads_real_pool) {	
+		/* We forbidden the same thread creating working threads continuously */
+		if (pool->launcher) {
+			if ((self && self->thread_id == pool->launcher) ||
+				(!self && OSPX_pthread_id() == pool->launcher)) {
+				pool->launcher = 0;
+				return;
+			}
 			pool->launcher = 0;
+		}
+
+		/* We wake up the sleeping threads */
+		assert(pool->nthreads_waiters >= 0 && 
+			pool->nthreads_waiters <= pool->n_qths_wait);
+		if (!list_empty(&pool->ths_waitq)) {
+			/* Caculate the number of threads who should be woke up to provide services */
+			ntasks_pending -= (pool->nthreads_real_pool + pool->nthreads_going_rescheduling 
+				
+				/* We decrease the number of threads who is running or sleeping */
+				+ pool->nthreads_dying_run - pool->nthreads_running - pool->nthreads_real_sleeping 
+
+				/* We should decrease the number of threads that has been woke up by us */
+				+ pool->n_qths_wait - pool->nthreads_waiters);
+			
+			if (ntasks_pending > 0 && pool->nthreads_waiters == pool->n_qths_wait) {
+				int nwake = (int)min(ntasks_pending, sl_const_nwakes);
+				/* NOTE:
+				 * 		We do not care about that which thread will be woke up, we just 
+				 * wake up no more than 1 threads to provide services. so the threads
+				 * should check the pool status again if they are going to exit after 
+				 * its having been woke up.
+				 */
+				if (pool->nthreads_waiters  >= nwake) {
+					pool->nthreads_waiters -= nwake;
+					
+					/* We just simply give threads a notification */
+					for (;nwake > 0; --nwake)
+						OSPX_pthread_cond_signal(&pool->cond);
+				} else {
+					pool->nthreads_waiters = 0;
+					OSPX_pthread_cond_broadcast(&pool->cond);
+				}
+				pool->launcher = self ? self->thread_id : OSPX_pthread_id();
+			} 
 			return;
 		}
-		pool->launcher = 0;
-	}
-
-	/* We wake up the sleeping threads */
-	assert(pool->nthreads_waiters >= 0 && 
-		pool->nthreads_waiters <= pool->n_qths_wait);
-	if (!list_empty(&pool->ths_waitq)) {
-		/* Caculate the number of threads who should be woke up to provide services */
-		ntasks_pending -= (pool->nthreads_real_pool + pool->nthreads_going_rescheduling 
-			
-			/* We decrease the number of threads who is running or sleeping */
-			+ pool->nthreads_dying_run - pool->nthreads_running - pool->nthreads_real_sleeping 
-
-			/* We should decrease the number of threads that has been woke up by us */
-			+ pool->n_qths_wait - pool->nthreads_waiters);
-		
-		if (ntasks_pending > 0 && pool->nthreads_waiters == pool->n_qths_wait) {
-			int nwake = (int)min(ntasks_pending, sl_const_nwakes);
-			/* NOTE:
-			 * 		We do not care about that which thread will be woke up, we just 
-			 * wake up no more than 1 threads to provide services. so the threads
-			 * should check the pool status again if they are going to exit after 
-			 * its having been woke up.
-			 */
-			if (pool->nthreads_waiters  >= nwake) {
-				pool->nthreads_waiters -= nwake;
-				
-				/* We just simply give threads a notification */
-				for (;nwake > 0; --nwake)
-					OSPX_pthread_cond_signal(&pool->cond);
-			} else {
-				pool->nthreads_waiters = 0;
-				OSPX_pthread_cond_broadcast(&pool->cond);
-			}
-			pool->launcher = self ? self->thread_id : OSPX_pthread_id();
-		} 
-		return;
 	}
 	
 	assert(pool->nthreads_running >= pool->nthreads_going_rescheduling &&
@@ -2694,7 +2710,7 @@ tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {
 		 * created to provide services */
 		if (curthreads_pool_free < pool->limit_threads_free) {	
 			int n = pool->maxthreads - pool->nthreads_real_pool;
-			/* Compute the number of threads who is should be created
+			/* Compute the number of threads who should be created
 			 * according to the @limit_threads_free. */
 			int nthreads = pool->limit_threads_free - curthreads_pool_free;	
 			assert(n >= 0);

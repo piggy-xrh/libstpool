@@ -209,9 +209,10 @@ enum {
 	THREAD_STAT_FREE,        /*Free*/         
 	THREAD_STAT_FORCE_QUIT,  /*Pool is being destroyed*/
 	THREAD_STAT_LEAVE,       /*Leaving*/
-	THREAD_STAT_RM     = (uint16_t)0x4000, /* Thread is in the RM queue */
-	THREAD_STAT_GC     = (uint16_t)0x8000,
-	THREAD_STAT_INNER  = THREAD_STAT_RM|THREAD_STAT_GC
+	THREAD_STAT_RM     = (uint16_t)0x1000, /* Thread is in the RM queue */
+	THREAD_STAT_GC     = (uint16_t)0x2000,
+	THREAD_STAT_LONG_RESTO = (uint16_t)0x4000,
+	THREAD_STAT_INNER  = THREAD_STAT_RM|THREAD_STAT_GC|THREAD_STAT_LONG_RESTO
 };
 
 /* Task type */
@@ -365,6 +366,9 @@ struct tpool_t {
 	void (*atexit)(struct tpool_t *, void *);
 	void *atexit_arg;
 	
+	/* timeo */
+	int n_long_resto;
+
 	/* global env */
 	long threads_wait_throttle, acttimeo, randtimeo;
 	int  limit_threads_free, limit_threads_create_per_time;
