@@ -169,6 +169,7 @@ tpool_setstatus(struct tpool_t *pool, long status, int synchronized) {
 	do {\
 		(self)->status = THREAD_STAT_INIT;\
 		INIT_LIST_HEAD(&(self)->thq);\
+		INIT_LIST_HEAD(&(self)->clq);\
 		(self)->structure_release = release;\
 		(self)->ntasks_done = 0;\
 		(self)->ncont_GC_counters = 0;\
@@ -181,6 +182,7 @@ tpool_setstatus(struct tpool_t *pool, long status, int synchronized) {
 	do {\
 		(self)->status = THREAD_STAT_INIT;\
 		INIT_LIST_HEAD(&(self)->thq);\
+		INIT_LIST_HEAD(&(self)->clq);\
 		(self)->structure_release = release;\
 		(self)->ncont_GC_counters = 0;\
 		(self)->ncont_rest_counters = 0;\
@@ -192,20 +194,20 @@ tpool_setstatus(struct tpool_t *pool, long status, int synchronized) {
 static int
 tpool_GC_run(struct task_t *ptsk) {
 	struct task_t *obj;
-	struct tpool_t *pool = ptsk->task_arg;
+	struct tpool_thread_t *th = ptsk->th;
 
 #if !defined(NDEBUG) && !defined(_WIN32)
 	prctl(PR_SET_NAME, ptsk->task_name);
 #endif
-	
+	printf("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++GC run.\n");
 	/* Pay back the task objects to the system */
-	while (!list_empty(&pool->gcq)) {
-		obj = list_entry(pool->gcq.next, struct task_t, wait_link);
+	while (!list_empty(&th->clq)) {
+		obj = list_entry(th->clq.next, struct task_t, wait_link);
 		list_del(&obj->wait_link);
 		
 		assert(!obj->ref);
 		if (obj->f_mask & TASK_F_MPOOL)
-			mpool_delete(pool->mp, obj);
+			mpool_delete(th->pool->mp, obj);
 		else
 			free(obj);
 	}
@@ -334,7 +336,6 @@ tpool_create(struct tpool_t  *pool, int q_pri, int maxthreads, int minthreads, i
 	
 	/* Initialize the GC env */
 	INIT_LIST_HEAD(&pool->clq);
-	INIT_LIST_HEAD(&pool->gcq);
 	tpool_task_init(&pool->sys_GC_task, "GC", tpool_GC_run, NULL, pool);
 	tpool_task_init(&pool->sys_GC_notify_task, "GC_notify", 
 		tpool_GC_notify_run, tpool_GC_notify_complete, pool);
@@ -360,7 +361,6 @@ tpool_create(struct tpool_t  *pool, int q_pri, int maxthreads, int minthreads, i
 	pool->throttle_enabled = 0;
 	pool->acttimeo  = 1000 * 20;
 	pool->randtimeo = 1000 * 30;
-	pool->threads_wait_throttle = 2;
 
 	/* Try to initiailize the priority queue */
 	if (q_pri <= 0)
@@ -478,7 +478,7 @@ tpool_load_env(struct tpool_t *pool) {
 	/* Load the @threads_wait_throttle */
 	env = getenv("THREADS_WAIT_THROTTLE");
 	if (!env || atoi(env) <= 0)	
-		pool->threads_wait_throttle = 2;
+		pool->threads_wait_throttle = 1;
 	else
 		pool->threads_wait_throttle = atoi(env);
 }
@@ -601,7 +601,7 @@ tpool_release_ex(struct tpool_t *pool, int decrease_user, int wait_threads_on_cl
 #ifndef NDEBUG
 		{
 			time_t now;
-		
+	
 			fprintf(stderr, "%s\n",
 				tpool_status_print(pool, NULL, 0));
 			now = time(NULL);
@@ -855,12 +855,12 @@ tpool_adjust_abs_l(struct tpool_t *pool, int maxthreads, int minthreads) {
 				break;
 		}
 		assert(!runthreads_dec && !waitthreads_dec);
-
+		
 		/* Wake up all sleeping threads */
 		OSPX_pthread_cond_broadcast(&pool->cond);	
 		pool->nthreads_waiters = 0;
 	}
-
+	
 	/* Reset the statics report */
 	pool->nthreads_peak = pool->nthreads_real_pool;
 	pool->ntasks_peak   = (int)pool->npendings;
@@ -1907,6 +1907,64 @@ tpool_pending_leq_wait(struct tpool_t *pool,  int n_max_pendings, long ms) {
 	return error;
 }
 
+static inline int
+tpool_get_GC_task(struct tpool_t *pool, struct tpool_thread_t *self) {
+	/* We try to assign the thread to do the GC jobs */
+	if ((self == pool->GC || !pool->GC) && pool->nGC &&
+			((pool->nGC > pool->cattr.nGC_cache) || !(POOL_F_CREATED & pool->status))) {
+		if (!(POOL_F_CREATED & pool->status)) {
+			list_splice_init(&pool->clq, &self->clq);
+			pool->nGC = 0;
+			++ self->ncont_GC_counters;
+			
+		/* We do not free the task objects continuously */
+		} else if (self->ncont_GC_counters) {
+			assert(THREAD_STAT_GC & self->status);
+			self->ncont_GC_counters = 0;
+		
+		} else {
+			int ele = 0;
+			struct list_head *pos;
+			
+			++ self->ncont_GC_counters;
+
+			ele = min(pool->cattr.nGC_one_time, pool->nGC - pool->cattr.nGC_cache);	
+			pool->nGC -= ele;
+			
+			/* We just free @nGC_one_time objects at a time to avoid this
+			 * task taking our too much time */
+			list_for_each(pos, &pool->clq) {
+				if (!-- ele)
+					break;
+			}	
+
+			assert (pos != &pool->clq);
+
+			/* Move parts of objects from the cache into the GC queue */
+			__list_cut_position(&self->clq, &pool->clq, pos);
+		}
+
+		if (self->ncont_GC_counters) {
+			__curtask = &pool->sys_GC_task;
+			__curtask->th = self;
+			
+			/* Mark the thread with THREAD_STAT_GC */
+			if (!pool->GC) {
+				pool->GC = self;
+				self->status |= THREAD_STAT_GC;
+				self->last_to = 0;
+			}
+			self->task_type = TASK_TYPE_GC;	
+			
+			/* Reset the rest counter */
+			self->ncont_rest_counters = 0;
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 static inline void 
 tpool_thread_status_change(struct tpool_t *pool, struct tpool_thread_t *self, uint16_t status, int synchronized) {	
 	if (!synchronized)
@@ -2033,18 +2091,11 @@ tpool_thread_status_change(struct tpool_t *pool, struct tpool_thread_t *self, ui
 			/* Give @tpool_release_ex a notification */
 			OSPX_pthread_cond_broadcast(&pool->cond_ths);
 		
-		if (THREAD_STAT_GC & self->status) 
+		/* Try to do the GC jobs */
+		self->ncont_GC_counters = 0;
+		if (tpool_get_GC_task(pool, self) || (THREAD_STAT_GC & self->status)) 
 			pool->GC = NULL;
-		
-		/* Try to wake up a thread to do the GC jobs */
-		if (!pool->GC && !list_empty(&pool->clq) && 
-			(POOL_F_CREATED & pool->status) && pool->nthreads_waiters &&
-			(pool->n_qths + pool->nthreads_going_rescheduling) ==
-			(pool->nthreads_waiters + pool->nthreads_running)) {
-			OSPX_pthread_cond_signal(&pool->cond);
-			-- pool->nthreads_waiters;
-		}
-
+			
 		/* Reset the thread launcher */
 		if (pool->launcher && (self->thread_id == pool->launcher || pool->n_qths <= 1))
 			pool->launcher = 0;		
@@ -2078,64 +2129,6 @@ tpool_thread_status_change(struct tpool_t *pool, struct tpool_thread_t *self, ui
 	assert(pool->n_qths >= pool->n_qths_wait + pool->nthreads_running);
 	if (!synchronized)
 		OSPX_pthread_mutex_unlock(&pool->mut);
-}
-
-static inline int
-tpool_get_GC_task(struct tpool_t *pool, struct tpool_thread_t *self) {
-	/* We try to assign the thread to do the GC jobs */
-	if ((self == pool->GC || !pool->GC) && pool->nGC &&
-			((pool->nGC > pool->cattr.nGC_cache) || !(POOL_F_CREATED & pool->status))) {
-		if (!(POOL_F_CREATED & pool->status)) {
-			list_splice_init(&pool->clq, &pool->gcq);
-			pool->nGC = 0;
-			++ self->ncont_GC_counters;
-			
-		/* We do not free the task objects continuously */
-		} else if (self->ncont_GC_counters) {
-			assert(THREAD_STAT_GC & self->status);
-			self->ncont_GC_counters = 0;
-		
-		} else {
-			int ele = 0;
-			struct list_head *pos;
-			
-			++ self->ncont_GC_counters;
-
-			ele = min(pool->cattr.nGC_one_time, pool->nGC - pool->cattr.nGC_cache);	
-			pool->nGC -= ele;
-			
-			/* We just free @nGC_one_time objects at a time to avoid this
-			 * task taking our too much time */
-			list_for_each(pos, &pool->clq) {
-				if (!-- ele)
-					break;
-			}	
-
-			assert (pos != &pool->clq);
-
-			/* Move parts of objects from the cache into the GC queue */
-			__list_cut_position(&pool->gcq, &pool->clq, pos);
-		}
-
-		if (self->ncont_GC_counters) {
-			__curtask = &pool->sys_GC_task;
-			__curtask->th = self;
-			
-			/* Mark the thread with THREAD_STAT_GC */
-			if (!pool->GC) {
-				pool->GC = self;
-				self->status |= THREAD_STAT_GC;
-				self->last_to = 0;
-			}
-			self->task_type = TASK_TYPE_GC;	
-			
-			/* Reset the rest counter */
-			self->ncont_rest_counters = 0;
-			return 1;
-		}
-	}	
-
-	return 0;
 }
 
 static inline int
@@ -2215,6 +2208,8 @@ tpool_gettask(struct tpool_t *pool, struct tpool_thread_t *self) {
 
 static inline void
 tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
+	int n = pool->nthreads_real_sleeping - pool->minthreads;
+
 	if ((THREAD_STAT_RM & (self)->status) || !(POOL_F_CREATED & pool->status)) {
 		self->last_to = 0;
 		return;
@@ -2239,13 +2234,10 @@ tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
 		pool->GC = NULL;				 		
 	} 
 	
-	if (pool->nthreads_real_sleeping + 1 <= pool->minthreads) 
+	if (n <= -1) 
 		self->last_to = -1; 
 	
-	else if (pool->nthreads_real_sleeping - pool->minthreads >= pool->threads_wait_throttle) 
-		self->last_to = 0; 
-	
-	else if (self->ncont_rest_counters) {
+	else if (self->ncont_rest_counters) {	
 		/* We take the @ncont_rest_counters into consideration,
 		 * think about situations like that.
 		 *    All threads go to sleep for none tasks existing in 
@@ -2255,7 +2247,11 @@ tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
 		 * the bad situation that some threads can not get any tasks
 		 * all the way may happen.
 		 */
-	} else {
+		printf("fuck.\n");
+	} else if (n >= pool->threads_wait_throttle) 
+		self->last_to = (n > 2) ? 0 : 10 + (unsigned)tpool_random(pool, self) % 100;
+	
+	else {
 		int n = min(10, pool->nthreads_real_sleeping);
 		/* Initialize the random sed */
 		OSPX_srandom(time(NULL));
@@ -2267,7 +2263,10 @@ tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
 		
 		if (self->last_to < 0) 
 			(self->last_to) &= 0x0000ffff;
-	} 
+		printf("*****\n");
+	}
+
+	printf("nth:%d nsleeping:%d <%p> last_to:%d\n", pool->nthreads_real_pool, pool->nthreads_real_sleeping, self, self->last_to);
 }
 
 
@@ -2279,6 +2278,7 @@ tpool_thread_entry(void *arg) {
 	
 	tpool_thread_setstatus(self, THREAD_STAT_JOIN);	
 	for (;;) {
+
 		tpool_schedule(pool, self);
 		
 		/* The exiting threads may be reused by our pool.
@@ -2288,7 +2288,19 @@ tpool_thread_entry(void *arg) {
 		if (!self->run) {
 			assert(THREAD_STAT_RM & self->status);
 			tpool_thread_setstatus_l(self, THREAD_STAT_LEAVE);
+			OSPX_pthread_mutex_unlock(&pool->mut);
 			
+			/* Run the GC task */
+			if (!list_empty(&self->clq)) {
+				int code; 
+				
+				self->task_complete = __curtask->task_complete;
+				__curtask->pdetached = &self->detached;
+				code = __curtask->task_run(__curtask);
+				if (__curtask->task_complete)
+					__curtask->task_complete(__curtask, TASK_VMARK_DONE, code);
+			}
+
 			if (self->structure_release)
 				structure_release = 1;
 			else {
@@ -2296,15 +2308,16 @@ tpool_thread_entry(void *arg) {
 				 * the free queue.
 				 */
 				INIT_thread_structure(pool, self, 0);
+				
+				OSPX_pthread_mutex_lock(&pool->mut);
 				list_add_tail(&self->link_free, &pool->freelst);
+				OSPX_pthread_mutex_unlock(&self->pool->mut);
 			}
-
-			OSPX_pthread_mutex_unlock(&self->pool->mut);
 			break;
 		}
 		OSPX_pthread_mutex_unlock(&pool->mut);
 	}
-
+	
 	/* We should decrease the references since we 
 	 * have increased it in the @tpool_add_thread.
 	 */	

@@ -68,11 +68,8 @@ int main()
 	printf("Press any key to resume the pool.\n");
 	getchar();
 	
-	stpool_release(hp);
-	getchar();
-	return 0;
 	/* Wake up the pool to schedule tasks */
-	//stpool_resume(hp);	
+	stpool_resume(hp);	
 	stpool_remove_pending_task(hp, NULL, 1);
 
 	/* Wait for all tasks' being done. */

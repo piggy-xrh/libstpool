@@ -251,6 +251,9 @@ struct tpool_thread_t {
 	uint8_t  detached;
 	void (*task_complete)(struct task_t *, long, int);
 	struct   task_t *current_task;
+	
+	/* GC env */
+	struct list_head clq;
 
 	/* Optimize */
 	struct list_head link_free;
@@ -347,7 +350,7 @@ struct tpool_t {
 	long nGC, nGC_queued;
 	char b_GC_delay, b_GC_queued;
 	struct cache_attr_t cattr;
-	struct list_head clq, gcq;
+	struct list_head clq;
 	struct tpool_thread_t *GC;
 	struct task_t sys_GC_task;
 	struct task_t sys_GC_notify_task;

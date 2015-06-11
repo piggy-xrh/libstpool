@@ -110,7 +110,7 @@ int main()
 					   );
 	
 	/* Set the sleep time for the threads (10s + random() % 60s)*/
-	stpool_set_activetimeo(hp, 10);
+	stpool_set_activetimeo(hp, 10, 20);
 	
 	/* Print the status of the pool */
 	printf("@tpool_create(20, 0, 0, 10)\n%s\n", stpool_status_print(hp, NULL, 0));

@@ -558,14 +558,14 @@ int OSPX_pthread_cond_timedwait(OSPX_pthread_cond_t *cond, OSPX_pthread_mutex_t 
 	 *     We can get the left timeo accurately by the tick-clock
 	 */
 	if (to && *to > 0) {	
-		if (ETIMEDOUT == error)
+		if (ETIMEDOUT == error) 
 			*to = 0;
 		else {
 			uint64_t utime0, utime1;
 
 			utime0 = tv_0.tv_sec * 1000 + tv_0.tv_usec / 1000;
 			utime1 = tv_1.tv_sec * 1000 + tv_1.tv_usec / 1000;
-			if (utime1 <= utime0 || *to <= utime1 - utime0)
+			if (utime1 < utime0 || *to <= utime1 - utime0) 
 				*to = 0;
 			else
 				*to = (long)((*to) - utime1 + utime0);
