@@ -2266,20 +2266,19 @@ tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
 			extra -= pool->threads_wait_throttle;
 			
 			if (extra < 1)
-				self->last_to = (pool->acttimeo / 8 + (unsigned)tpool_random(pool, self) % pool->randtimeo) / 8;
+				self->last_to = (pool->acttimeo / 8 + 
+					(unsigned)tpool_random(pool, self) % pool->randtimeo) / 8;
 			else
-				self->last_to = (min(pool->acttimeo, 10)) + (unsigned)tpool_random(pool, self) % (min(pool->randtimeo, 100));
+				self->last_to = (min(pool->acttimeo, 10)) + 
+					(unsigned)tpool_random(pool, self) % (min(pool->randtimeo, 100));
 		
 		} else {
 			int n = min(10, pool->nthreads_real_sleeping);
 		
 			/* Initialize the random sed */
 			OSPX_srandom(time(NULL));
-
-			if (pool->nthreads_real_sleeping <= 4) 
-				self->last_to = (pool->acttimeo + (unsigned)tpool_random(pool, self) % pool->randtimeo) / pow(2, n);
-			else 
-				self->last_to = (unsigned)tpool_random(pool, self) % pool->randtimeo / pow(4, n);
+			self->last_to = (unsigned)tpool_random(pool, self) % 
+					pool->randtimeo / pow(3, n);
 		}
 		
 		if (self->last_to < 0) 
