@@ -478,7 +478,7 @@ tpool_load_env(struct tpool_t *pool) {
 	/* Load the @threads_wait_throttle */
 	env = getenv("THREADS_WAIT_THROTTLE");
 	if (!env || atoi(env) <= 0)	
-		pool->threads_wait_throttle = 1;
+		pool->threads_wait_throttle = 3;
 	else
 		pool->threads_wait_throttle = atoi(env);
 }
@@ -2119,7 +2119,6 @@ tpool_thread_status_change(struct tpool_t *pool, struct tpool_thread_t *self, ui
 			self->status &= ~THREAD_STAT_LONG_RESTO;
 			-- pool->n_long_resto;
 		}
-		
 		/* Remove the thread from the wait queue */
 		list_del(&self->run_link);
 		-- pool->n_qths_wait;
@@ -2254,9 +2253,13 @@ tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
 		 * all the way may happen.
 		 */
 	} else {
-		if (!pool->n_long_resto) {
+		if (pool->n_long_resto < pool->threads_wait_throttle) {
+			/* Initialize the random sed */
+			OSPX_srandom(time(NULL));
+
 			++ pool->n_long_resto;
-			self->last_to = (pool->acttimeo + (unsigned)tpool_random(pool, self) % pool->randtimeo);
+			self->last_to = (pool->acttimeo + (unsigned)tpool_random(pool, self) % pool->randtimeo) 
+				/ pow(2, pool->n_long_resto);
 			self->status |= THREAD_STAT_LONG_RESTO;
 		
 		} else if (pool->threads_wait_throttle && extra >= pool->threads_wait_throttle) {
@@ -2672,7 +2675,6 @@ tpool_increase_threads(struct tpool_t *pool, struct tpool_thread_t *self) {
 
 				/* We should decrease the number of threads that has been woke up by us */
 				+ pool->n_qths_wait - pool->nthreads_waiters);
-			
 			if (ntasks_pending > 0 && pool->nthreads_waiters == pool->n_qths_wait) {
 				int nwake = (int)min(ntasks_pending, sl_const_nwakes);
 				/* NOTE:
