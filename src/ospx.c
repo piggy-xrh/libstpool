@@ -317,6 +317,12 @@ int OSPX_pthread_create(OSPX_pthread_t *handle, OSPX_pthread_attr_t *attr, int (
 			
 			/* Set the schedule policy */
 			if (ep_NONE != attr->sche_policy) {	
+				int inh;
+
+				pthread_attr_getinheritsched(pattr, &inh);
+				if (PTHREAD_EXPLICIT_SCHED != inh)
+					pthread_attr_setinheritsched(pattr, PTHREAD_EXPLICIT_SCHED);
+
 				switch (attr->sche_policy) {
 				case ep_RR:
 					sche = SCHED_RR;

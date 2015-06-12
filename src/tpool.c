@@ -1124,8 +1124,9 @@ tpool_mark_task(struct tpool_t *pool, struct task_t *ptsk, long lflags) {
 
 	/* Check whether the task should be removed */
 	if (!stat.stat || !lflags) {
+		lflags = ptsk->f_vmflags;
 		OSPX_pthread_mutex_unlock(&pool->mut);
-		return -1;
+		return lflags;
 	}
 
 	if (TASK_VMARK_REMOVE & lflags) {
@@ -2257,10 +2258,10 @@ tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
 			/* Initialize the random sed */
 			OSPX_srandom(time(NULL));
 
-			++ pool->n_long_resto;
 			self->last_to = (pool->acttimeo + (unsigned)tpool_random(pool, self) % pool->randtimeo) 
 				/ pow(2, pool->n_long_resto);
 			self->status |= THREAD_STAT_LONG_RESTO;
+			++ pool->n_long_resto;
 		
 		} else if (pool->threads_wait_throttle && extra >= pool->threads_wait_throttle) {
 			extra -= pool->threads_wait_throttle;
