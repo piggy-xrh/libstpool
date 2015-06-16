@@ -32,15 +32,18 @@
 #include <string.h>
 #include <errno.h>
 
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN   // Exclude rarely-used stuff from Windows headers
+#if defined(_WIN32) || defined(WIN32) || defined(_WIN64)
+#define WIN32_LEAN_AND_MEAN   /* Exclude rarely-used stuff from Windows headers */
+#define WIN64_LEAN_AND_MEAN   
 
 #include <sys/timeb.h>
 #include <windows.h>
 #include <winsock2.h>
 #include <process.h>
 
-
+#ifdef _HAS_STDINT_H
+#include <stdint.h>   /* For dev-c++ */
+#else
 typedef __int8  int8_t;
 typedef __int16 int16_t;
 typedef __int32 int32_t;
@@ -49,11 +52,8 @@ typedef unsigned __int8  uint8_t;
 typedef unsigned __int16 uint16_t;
 typedef unsigned __int32 uint32_t;
 typedef unsigned __int64 uint64_t;
-typedef int mode_t;
-typedef long off_t;
 typedef int ssize_t;
-typedef long in_addr_t;
-#define AF_LOCAL AF_INET
+#endif
 
 struct timezone {
 	int tz_minuteswest;     /* minutes west of Greenwich */

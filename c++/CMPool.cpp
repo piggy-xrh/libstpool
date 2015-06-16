@@ -1,10 +1,8 @@
 #include <stdio.h>
 #include <stdexcept>
+
 #include "CMAllocator.h"
-extern "C"
-{
 #include "ospx.h"
-}
 
 CMPool::CMPoolLockInitializer::CMPoolLockInitializer()
 {

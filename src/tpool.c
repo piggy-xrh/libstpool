@@ -124,7 +124,7 @@ tpool_new_task(struct tpool_t *pool) {
 	return ptsk;
 }
 
-#define tpool_delete_task_l(pool, ptsk)  {list_add_tail(&(ptsk)->wait_link, &(pool)->clq); ++ pool->nGC;}
+#define tpool_delete_task_l(pool, ptsk)  do {list_add_tail(&(ptsk)->wait_link, &(pool)->clq); ++ pool->nGC;} while (0)
 
 void 
 tpool_delete_task(struct tpool_t *pool, struct task_t *ptsk) {
@@ -223,7 +223,7 @@ tpool_GC_notify_run(struct task_t *ptsk) {
 
 static void
 tpool_GC_notify_complete(struct task_t *ptsk, long vmflags, int code) {
-	struct tpool_t *pool = ptsk->task_arg;
+	struct tpool_t *pool = (struct tpool_t *)ptsk->task_arg;
 	
 	/* Detach ourself */
 	tpool_detach_task(pool, ptsk);
@@ -249,7 +249,7 @@ tpool_task_setschattr(struct task_t *ptsk, struct xschattr_t *attr) {
 	 * lowest priority queue */
 	if (!attr->pri_policy || (!attr->pri && P_SCHE_BACK == attr->pri_policy)) {
 		ptsk->f_mask |= TASK_F_PUSH;
-		ptsk->f_mask &= ~TASK_F_PRI;
+		ptsk->f_mask &= ~(TASK_F_PRI|TASK_F_ADJPRI);
 		ptsk->pri = 0;
 		ptsk->pri_q = 0;
 	
@@ -1282,7 +1282,7 @@ tpool_mark_task_ex(struct tpool_t *pool,
 		}
 		ptsk->f_stat = TASK_STAT_DISPATCHING;
 				
-		assert(ptsk->pri_q >= 0 && ptsk->pri_q < pool->pri_q_num);
+		assert(ptsk->pri_q < pool->pri_q_num);
 		/* Remove the task from the pending queue */
 		list_del(&ptsk->wait_link);
 		if (list_empty(&pool->pri_q[ptsk->pri_q].task_q))

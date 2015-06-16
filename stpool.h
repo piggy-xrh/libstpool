@@ -253,6 +253,10 @@ struct stpool_thattr_t {
 	int sche_priority;
 };
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*----------------APIs about the task --------------*/
 
 /*@stpool_task_size
@@ -903,5 +907,10 @@ EXPORT int  stpool_pending_leq_wait(HPOOL hp, int n_max_pendings, long ms);
  *	  None
  */
 EXPORT void stpool_wakeup(HPOOL hp, long wkid);
+
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

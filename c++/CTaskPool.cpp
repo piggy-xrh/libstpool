@@ -27,11 +27,7 @@
 
 #include <string.h>
 #include "CTaskPool.h"
-
-extern "C"
-{
 #include "stpool.h"
-}
 
 static int doTaskWrapper(struct sttask_t *task)
 {
@@ -275,9 +271,10 @@ TaskPoolStat CTaskPool::stat()
 
 const std::string& CTaskPool::stat(std::string &st)
 {
-	char statBuffer[1024 * 4] = {0};
+	char statBuffer[1024 * 2] = {0};
 	
-	return st.assign(stpool_status_print(m_proxyHandle, statBuffer, sizeof(statBuffer) -1));
+	st.append(stpool_status_print(m_proxyHandle, statBuffer, sizeof(statBuffer) -1));
+	return st;
 }
 
 long CTaskPool::taskStat(CTask *task, long &sm)

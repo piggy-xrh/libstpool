@@ -59,6 +59,11 @@ struct mpool_attr_t {
 	int nmax_alloc;
 };
 
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int   mpool_init(struct mpool_t *mp, size_t objlen);
 void  mpool_attr_set(struct mpool_t *mp, struct mpool_attr_t *attr);
 struct mpool_attr_t *mpool_attr_get(struct mpool_t *mp, struct mpool_attr_t *attr);
@@ -75,4 +80,9 @@ void  mpool_destroy(struct mpool_t *mp, int force);
 /* Verify whether the object ptr belongs to the mpool */
 void  mpool_assert(struct mpool_t *mp, void *ptr);
 #endif
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

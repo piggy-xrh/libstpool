@@ -23,11 +23,8 @@
  * 	  (Email: piggy_xrh@163.com  QQ: 1169732280)
  * 	  blog: http://www.oschina.net/code/snippet_1987090_44422
  */
-extern "C"
-{
 #include "ospx.h"
 #include "mpool.h"
-}
 #include "CMAllocator.h"
 
 CMAllocator::CMAllocator(const char *desc, size_t bytes):

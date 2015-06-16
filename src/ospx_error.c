@@ -307,7 +307,7 @@ errprefix_dump(char *errprefix, uint16_t *bufflen, const char *append) {
 	
 	if (strlen(append) > left) {
 		size_t blklen = *bufflen + strlen(append) - left + 50;
-		char *newblk  = realloc(errprefix, blklen); 
+		char *newblk  = (char *)realloc(errprefix, blklen); 
 		
 		if (!newblk) 
 			return errprefix;	

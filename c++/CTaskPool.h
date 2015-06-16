@@ -112,9 +112,16 @@ struct threadAttr {
 	/* Thread schedule policy */
 	enum 
 	{
+		/* Default policy */
 		ep_SCHE_NONE,
+
+		/* POSIX RR policy */
 		ep_SCHE_RR,
+
+		/* POSIX FIFO policy */
 		ep_SCHE_FIFO,
+
+		/* POSIX OTHER policy */
 		ep_SCHE_OTHER
 	};
 	int ep;
@@ -140,7 +147,10 @@ class EXPORT CTaskPool
 		long addRef();
 		long release();
 		
-		void setActiveTimeo(long actTimeo, long randTimeo);
+		/* Set the rest time for the working threads */
+		void setActiveTimeo(long actTimeo /* seconds */, long randTimeo = 60 /*seconds */);
+		
+		/* Adjust the threads number of the pool */
 		void adjustAbs(int maxThreads, int minThreads);
 		void adjust(int maxThreads, int minThreads);
 		
@@ -184,7 +194,7 @@ class EXPORT CTaskPool
 		 * to force the wait functions return with error code ep_WOKEUP.
 		 *
 		 *   model:
-		 *          thread1
+		 *          thread1                      thread2
 		 *      wakeID = getThreadID();
 		 *      wait();
 		 *                                 <------ wakeup(wakeID)
@@ -250,8 +260,8 @@ class EXPORT CTask
 				 * been changed */
 				if (p && (_sm & CTask::sm_DISABLE_QUEUE))
 					return p->enableQueueOnTask(this, true);
-			} else
-				m_parent = p;
+			} 
+			
 			return ep_OK;
 		}
 		inline CTaskPool *getParent() const {return m_parent;}
@@ -345,7 +355,6 @@ class EXPORT CTask
 		struct sttask_t *m_proxy;
 		CTaskPool *m_parent;
 };
-
 
 /* In order to make the pool works effeciently, we allocate all tasks 
  * object in the memory pool .*/

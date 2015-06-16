@@ -29,7 +29,7 @@
 
 /* <piggy_xrh@163.com>
  */
-#ifdef _WIN32
+#if defined(_WIN32) || defined(WIN32) || defined(_WIN64)
 #ifdef _USRDLL
 #define EXPORT __declspec(dllexport)
 #else

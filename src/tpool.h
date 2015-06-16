@@ -56,6 +56,12 @@ enum {
 	POOL_ERR_ERRNO = 0x1000,
 };
 
+
+/* For dev-c++ env */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* --------------APIs about the task ------------------- */
 #define tpool_task_init(ptsk, name, run, complete, arg) \
 	do {\
@@ -113,5 +119,9 @@ int  tpool_pending_leq_wait(struct tpool_t *pool,  int n_max_pendings, long ms);
 #define WK_T_PENDING_WAIT 0x20  
 #define WK_T_WAIT_ALL  (long)-1 
 void tpool_wakeup(struct tpool_t *pool, long wakeup_type);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

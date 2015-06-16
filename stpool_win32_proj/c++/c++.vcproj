@@ -154,60 +154,6 @@
 			>
 		</Filter>
 		<Filter
-			Name="Header Files"
-			Filter="h;hpp;hxx;hm;inl;inc;xsd"
-			UniqueIdentifier="{93995380-89BD-4b04-88EB-625FBE52EBFB}"
-			>
-			<File
-				RelativePath="..\..\c++\CMAllocator.h"
-				>
-			</File>
-			<File
-				RelativePath="..\..\c++\CMPool.h"
-				>
-			</File>
-			<File
-				RelativePath="..\..\c++\CTaskPool.h"
-				>
-			</File>
-			<File
-				RelativePath="..\..\src\list.h"
-				>
-			</File>
-			<File
-				RelativePath="..\..\src\mpool.h"
-				>
-			</File>
-			<File
-				RelativePath="..\..\src\ospx.h"
-				>
-			</File>
-			<File
-				RelativePath="..\..\src\ospx_errno.h"
-				>
-			</File>
-			<File
-				RelativePath="..\..\src\ospx_error.h"
-				>
-			</File>
-			<File
-				RelativePath="..\..\src\ospx_type.h"
-				>
-			</File>
-			<File
-				RelativePath="..\..\stpool.h"
-				>
-			</File>
-			<File
-				RelativePath="..\..\src\tpool.h"
-				>
-			</File>
-			<File
-				RelativePath="..\..\src\tpool_struct.h"
-				>
-			</File>
-		</Filter>
-		<Filter
 			Name="Resource Files"
 			Filter="rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav"
 			UniqueIdentifier="{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}"

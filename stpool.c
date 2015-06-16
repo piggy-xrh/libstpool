@@ -74,7 +74,7 @@ stpool_task_new(const char *name,
 		struct mpool_t *mp;
 		
 		if (1 == ++ sl_mp_initialized) {
-			mp = malloc(sizeof(struct mpool_t));
+			mp = (struct mpool_t *)malloc(sizeof(struct mpool_t));
 			if (mp) {
 				if (!mpool_init(mp, sizeof(struct task_t)))
 					gs_mp = mp;
@@ -85,9 +85,9 @@ stpool_task_new(const char *name,
 	}
 	
 	if (gs_mp) 
-		ptsk = mpool_new(gs_mp);
+		ptsk = (struct task_t *)mpool_new(gs_mp);
 	else
-		ptsk = calloc(sizeof(struct task_t), 1);
+		ptsk = (struct task_t *)calloc(sizeof(struct task_t), 1);
 	
 	/* Initialzie the task object */
 	if (ptsk) {
@@ -179,7 +179,7 @@ stpool_thread_setscheattr(HPOOL hp, struct stpool_thattr_t *attr) {
 
 	tpool_thread_getscheattr(pool, &att);
 	att.stack_size = attr->stack_size;
-	att.sche_policy = attr->ep_schep;
+	att.sche_policy = (enum ep_POLICY)attr->ep_schep;
 	att.sche_priority = attr->sche_priority;
 	tpool_thread_setscheattr(pool, &att);
 }
@@ -190,7 +190,7 @@ stpool_thread_getscheattr(HPOOL hp, struct stpool_thattr_t *attr) {
 	
 	tpool_thread_getscheattr((struct tpool_t *)hp, &att);
 	attr->stack_size = att.stack_size;
-	attr->ep_schep = att.sche_policy;
+	attr->ep_schep = (enum ep_SCHE)att.sche_policy;
 	attr->sche_priority = att.sche_priority;
 	
 	return attr;
