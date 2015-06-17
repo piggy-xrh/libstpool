@@ -1104,32 +1104,37 @@ tpool_try_wakeup_GC(struct tpool_t *pool) {
 	return 0;
 }
 
+static const long sl_const_USR_MFLAGS = (TASK_VMARK_REMOVE|TASK_VMARK_DISABLE_QUEUE|
+		TASK_VMARK_DO_AGAIN|TASK_VMARK_ENABLE_QUEUE);
+
 long
 tpool_mark_task(struct tpool_t *pool, struct task_t *ptsk, long lflags) {	
-	int q, do_complete = 0, nGC_predicted = 0;
+	int q, do_complete = 0;
 	struct tpool_tskstat_t stat;	
 		
 	assert (ptsk);
 
 	/* Set the vmflags properly */
-	lflags &= (TASK_VMARK_REMOVE|TASK_VMARK_DISABLE_QUEUE|TASK_VMARK_ENABLE_QUEUE);
+	lflags &= sl_const_USR_MFLAGS;
 	if (TASK_VMARK_ENABLE_QUEUE & lflags)
 		lflags &= ~TASK_VMARK_DISABLE_QUEUE;
+	
+	if (TASK_VMARK_DO_AGAIN & lflags)
+		lflags &= ~TASK_VMARK_REMOVE;
+
 	q = ptsk->pri_q;	
-	if (TASK_F_ONCE & ptsk->f_mask)
-		++ nGC_predicted;
 
 	OSPX_pthread_mutex_lock(&pool->mut);
 	ACQUIRE_TASK_STAT(pool, ptsk, &stat);
 	
-	nGC_predicted += pool->nGC;
-	
+	/* Process the DISABLE_QUEUE flag */
 	if (TASK_VMARK_DISABLE_QUEUE & lflags) 
 		ptsk->f_vmflags |= TASK_VMARK_DISABLE_QUEUE;
 	
 	else if (TASK_VMARK_ENABLE_QUEUE & lflags) 
 		ptsk->f_vmflags &= ~TASK_VMARK_DISABLE_QUEUE;
-
+	lflags &= ~(TASK_VMARK_DISABLE_QUEUE|TASK_VMARK_ENABLE_QUEUE);
+	
 	/* Check whether the task should be removed */
 	if (!stat.stat || !lflags) {
 		lflags = ptsk->f_vmflags;
@@ -1137,64 +1142,72 @@ tpool_mark_task(struct tpool_t *pool, struct task_t *ptsk, long lflags) {
 		return lflags;
 	}
 
-	if (TASK_VMARK_REMOVE & lflags) {
-		if (sl_const_allowed_rmflags & stat.stat) {
-			/* Remove the @DO_AGAIN flag */
-			if (TASK_VMARK_DO_AGAIN & ptsk->f_vmflags) 
-				ptsk->f_vmflags &= ~TASK_VMARK_DO_AGAIN;	
-			
-			else if (ptsk->do_again)
-				ptsk->do_again = 0;
-			
-			else {
-				assert(q >= 0 && q < pool->pri_q_num);
-				list_del(&ptsk->wait_link);
-				if (list_empty(&pool->pri_q[q].task_q))
-					list_del(&pool->pri_q[q].link);	
-
-				if (lflags & TASK_VMARK_REMOVE_DIRECTLY) 
-					ptsk->f_vmflags |= TASK_VMARK_REMOVE_DIRECTLY;
-				else 
-					ptsk->f_vmflags |= TASK_VMARK_REMOVE_BYPOOL;
-				
-				/* Decrease the number of pending tasks */
-				-- pool->npendings;
-				
-				if (!ptsk->task_complete) {	
-					/* We just remove the task directly if it has no
-				 	 * completion routine */
-					list_del(&ptsk->trace_link);
-					-- pool->n_qtrace;
+	/* Process the DO_AGAIN flag */
+	if (TASK_VMARK_DO_AGAIN & lflags) {
+		if (ptsk->f_vmflags & TASK_VMARK_REMOVE)
+			ptsk->do_again = 1;
+		else
+			ptsk->f_vmflags |= TASK_VMARK_DO_AGAIN;
+	}
+	
+	/* Process the REMOVE flag */
+	if (TASK_VMARK_REMOVE & lflags &&
+		(sl_const_allowed_rmflags & stat.stat)) {
+		/* Remove the @DO_AGAIN flag */
+		if (TASK_VMARK_DO_AGAIN & ptsk->f_vmflags) 
+			ptsk->f_vmflags &= ~TASK_VMARK_DO_AGAIN;	
 		
-					if (TASK_VMARK_REMOVE_BYPOOL & ptsk->f_vmflags)
-						++ pool->ntasks_dispatched;
+		else if (ptsk->do_again)
+			ptsk->do_again = 0;
+		
+		else {
+			assert(q >= 0 && q < pool->pri_q_num);
+			list_del(&ptsk->wait_link);
+			if (list_empty(&pool->pri_q[q].task_q))
+				list_del(&pool->pri_q[q].link);	
+
+			if (lflags & TASK_VMARK_REMOVE_DIRECTLY) 
+				ptsk->f_vmflags |= TASK_VMARK_REMOVE_DIRECTLY;
+			else 
+				ptsk->f_vmflags |= TASK_VMARK_REMOVE_BYPOOL;
+			
+			/* Decrease the number of pending tasks */
+			-- pool->npendings;
+			
+			if (!ptsk->task_complete) {	
+				/* We just remove the task directly if it has no
+				 * completion routine */
+				list_del(&ptsk->trace_link);
+				-- pool->n_qtrace;
+	
+				if (TASK_VMARK_REMOVE_BYPOOL & ptsk->f_vmflags)
+					++ pool->ntasks_dispatched;
+			
+				ptsk->f_stat = 0;
+				TRY_wakeup_waiters(pool, ptsk);
+
+				if ((ptsk->f_mask & TASK_F_ONCE) && !ptsk->ref)
+					tpool_delete_task_l(pool, ptsk);
+
+			} else if (lflags & TASK_VMARK_REMOVE_BYPOOL) {
+				++ pool->ndispatchings;
 				
-					ptsk->f_stat = 0;
-					TRY_wakeup_waiters(pool, ptsk);
+				/* Wake up threads to schedule the callback */
+				ptsk->f_stat = TASK_STAT_DISPATCHING;
+				list_add_tail(&ptsk->wait_link, &pool->dispatch_q);
+				++ pool->n_qdispatch;
+				++ pool->npendings;
+				tpool_increase_threads(pool, NULL);
 
-					if ((ptsk->f_mask & TASK_F_ONCE) && !ptsk->ref)
-						tpool_delete_task_l(pool, ptsk);
-
-				} else if (lflags & TASK_VMARK_REMOVE_BYPOOL) {
-					++ pool->ndispatchings;
-					
-					/* Wake up threads to schedule the callback */
-					ptsk->f_stat = TASK_STAT_DISPATCHING;
-					list_add_tail(&ptsk->wait_link, &pool->dispatch_q);
-					++ pool->n_qdispatch;
-					++ pool->npendings;
-					tpool_increase_threads(pool, NULL);
-
-				} else {
-					do_complete = 1;
-					++ pool->ndispatchings;
-					ptsk->f_stat = TASK_STAT_DISPATCHING;
-				}
-				
-				/* Try to give a notification to @tpool_pending_leq_wait */
-				if (pool->npendings_ev >= pool->npendings)
-					OSPX_pthread_cond_broadcast(&pool->cond_ev);
+			} else {
+				do_complete = 1;
+				++ pool->ndispatchings;
+				ptsk->f_stat = TASK_STAT_DISPATCHING;
 			}
+			
+			/* Try to give a notification to @tpool_pending_leq_wait */
+			if (pool->npendings_ev >= pool->npendings)
+				OSPX_pthread_cond_broadcast(&pool->cond_ev);
 		}
 	}	
 	lflags = ptsk->f_vmflags;
@@ -1205,7 +1218,7 @@ tpool_mark_task(struct tpool_t *pool, struct task_t *ptsk, long lflags) {
 		tpool_task_complete(pool, NULL, ptsk, POOL_TASK_ERR_REMOVED);
 	
 	/* Try to wake up the GC */
-	if (nGC_predicted >= pool->cattr.nGC_wakeup)
+	if (pool->nGC >= pool->cattr.nGC_wakeup)
 		tpool_try_wakeup_GC(pool);
 
 	return lflags;
@@ -1216,7 +1229,7 @@ tpool_mark_task_ex(struct tpool_t *pool,
 			long (*tskstat_walk)(struct tpool_tskstat_t *, void *),
 			void *arg) {	
 	long vmflags, changed;
-	int  effected = 0, removed = 0, n_qdispatch = 0, nGC_predicted = 0;
+	int  effected = 0, removed = 0, n_qdispatch = 0;
 	struct list_head rmq, no_callback_q, pool_q, *q;
 	struct task_t *ptsk, *n;
 	struct tpool_tskstat_t stat;
@@ -1238,14 +1251,18 @@ tpool_mark_task_ex(struct tpool_t *pool,
 		assert(stat.stat);
 
 		/* Set the vmflags properly */
-		vmflags &= (TASK_VMARK_REMOVE|TASK_VMARK_DISABLE_QUEUE|TASK_VMARK_ENABLE_QUEUE);
+		vmflags &= sl_const_USR_MFLAGS;
 		if (TASK_VMARK_ENABLE_QUEUE & vmflags)
 			vmflags &= ~TASK_VMARK_DISABLE_QUEUE;
 		
+		if (TASK_VMARK_DO_AGAIN & vmflags)
+			vmflags &= ~TASK_VMARK_REMOVE;
+
 		if (!vmflags) 
 			continue;
 		
 		changed = 0;
+		/* Process the DISABLE_QUEUE flag */
 		if (TASK_VMARK_DISABLE_QUEUE & vmflags) {
 			if (!(TASK_VMARK_DISABLE_QUEUE & ptsk->f_vmflags)) {
 				ptsk->f_vmflags |= TASK_VMARK_DISABLE_QUEUE;
@@ -1257,9 +1274,19 @@ tpool_mark_task_ex(struct tpool_t *pool,
 				changed = 1;
 			}
 		}
-		
-		/* Deal with the RM flags */
-		if (!(sl_const_allowed_rmflags & stat.stat)) {
+
+		/* Process the DO_AGAIN flag */
+		if (stat.stat && (TASK_VMARK_DO_AGAIN & vmflags)) {
+			if (ptsk->f_vmflags & TASK_VMARK_REMOVE)
+				ptsk->do_again = 1;
+			else
+				ptsk->f_vmflags |= TASK_VMARK_DO_AGAIN;
+			changed = 1;
+		}
+
+		/* Process the REMOVE flag */
+		if (!(TASK_VMARK_REMOVE & vmflags) ||
+			!(sl_const_allowed_rmflags & stat.stat)) {
 			if (changed)
 				++ effected;
 			continue;
@@ -1276,9 +1303,6 @@ tpool_mark_task_ex(struct tpool_t *pool,
 			ptsk->do_again = 0;
 			continue;
 		}
-
-		if (TASK_F_ONCE & ptsk->f_mask)
-			++ nGC_predicted;
 	
 		/* Check whether the task should be removed */
 		if (vmflags & TASK_VMARK_REMOVE_DIRECTLY) {
@@ -1314,15 +1338,10 @@ tpool_mark_task_ex(struct tpool_t *pool,
 		pool->npendings += n_qdispatch;
 		list_splice(&pool_q, &pool->dispatch_q);
 		pool->n_qdispatch += n_qdispatch;
-
-		/* The service threads will do the GC jobs at the rest time,
-		 * so we needn't to wake up the threads to do GC */
-		nGC_predicted = 0;
-
+	
 		/* Wake up threads to schedule the callbacks */
 		tpool_increase_threads(pool, NULL);
-	} else if (nGC_predicted)
-		nGC_predicted += pool->nGC;
+	} 
 
 	if (!list_empty(&no_callback_q)) 
 		tpool_task_complete_nocallback_l(pool, &no_callback_q);	
@@ -1337,7 +1356,7 @@ tpool_mark_task_ex(struct tpool_t *pool,
 		tpool_rmq_dispatch(pool, &rmq, NULL, POOL_TASK_ERR_REMOVED);	
 	
 	/* Try to wake up the GC */
-	if (nGC_predicted >= pool->cattr.nGC_wakeup)
+	if (pool->nGC >= pool->cattr.nGC_wakeup)
 		tpool_try_wakeup_GC(pool);
 
 	return effected;

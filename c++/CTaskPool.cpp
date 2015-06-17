@@ -195,6 +195,14 @@ int CTaskPool::removeAll(bool dispatchedByPool)
 	return stpool_remove_pending_task(m_proxyHandle, NULL, dispatchedByPool ? 1 : 0);
 }
 
+long CTaskPool::mark(CTask *task, long smFlags)
+{
+	if (task && this != task->getParent())
+		return ep_PARENT;
+
+	return stpool_mark_task(m_proxyHandle, task ? task->getProxy() : NULL, smFlags);
+}
+
 long CTaskPool::getThreadID()
 {
 	return stpool_wkid();

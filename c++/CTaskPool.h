@@ -183,6 +183,8 @@ class EXPORT CTaskPool
 		/* Return the number for tasks who has been marked with @REMOVED */
 		int  removeAll(bool dispatchedByPool = true);
 		
+		long mark(CTask *task, long smFlags);
+		
 		/* @detach is only be allowed to call in the task's
 		 * working or completion routine. (see libstpool for
 		 * more details) */
@@ -334,7 +336,10 @@ class EXPORT CTask
 			sm_ONCE_AGAIN = 0x20,
 			
 			/* The task is not allowed to dilived into the pool */
-			sm_DISABLE_QUEUE = 0x40
+			sm_DISABLE_QUEUE = 0x40,
+			
+			/* The task is allowed to dilived into the pool (default) */
+			sm_ENABLE_QUEUE = 0x80,
 		};
 		/* Note: 	All of the task's marks except sm_DISABLE_QUEUE will be cleared
 		 *      after it having been delived into the parent's pending queue by @queue
@@ -345,6 +350,7 @@ class EXPORT CTask
 		inline int  remove() {return m_parent ? m_parent->remove(this) : ep_OK;}
 		inline int  wait(long ms = -1) {return m_parent ? m_parent->wait(this, ms) : ep_OK;}
 		inline int  enableQueue(bool enable = true) {return m_parent ? m_parent->enableQueueOnTask(this, enable) : ep_OK;}
+		inline long mark(long smFlags) {return m_parent ? m_parent->mark(this, smFlags) : ep_OK;}
 
 		/* The working routine and completion routine of the task.
 		 * the subclass will implement them to do his customed work. */
