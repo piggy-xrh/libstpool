@@ -1104,8 +1104,8 @@ tpool_try_wakeup_GC(struct tpool_t *pool) {
 	return 0;
 }
 
-static const long sl_const_USR_MFLAGS = (TASK_VMARK_REMOVE|TASK_VMARK_DISABLE_QUEUE|
-		TASK_VMARK_DO_AGAIN|TASK_VMARK_ENABLE_QUEUE);
+static const long sl_const_USR_MFLAGS = 
+	(TASK_VMARK_REMOVE|TASK_VMARK_DISABLE_QUEUE|TASK_VMARK_ENABLE_QUEUE);
 
 long
 tpool_mark_task(struct tpool_t *pool, struct task_t *ptsk, long lflags) {	
@@ -1117,11 +1117,7 @@ tpool_mark_task(struct tpool_t *pool, struct task_t *ptsk, long lflags) {
 	/* Set the vmflags properly */
 	lflags &= sl_const_USR_MFLAGS;
 	if (TASK_VMARK_ENABLE_QUEUE & lflags)
-		lflags &= ~TASK_VMARK_DISABLE_QUEUE;
-	
-	if (TASK_VMARK_DO_AGAIN & lflags)
-		lflags &= ~TASK_VMARK_REMOVE;
-
+		lflags &= ~TASK_VMARK_DISABLE_QUEUE;	
 	q = ptsk->pri_q;	
 
 	OSPX_pthread_mutex_lock(&pool->mut);
@@ -1140,14 +1136,6 @@ tpool_mark_task(struct tpool_t *pool, struct task_t *ptsk, long lflags) {
 		lflags = ptsk->f_vmflags;
 		OSPX_pthread_mutex_unlock(&pool->mut);
 		return lflags;
-	}
-
-	/* Process the DO_AGAIN flag */
-	if (TASK_VMARK_DO_AGAIN & lflags) {
-		if (ptsk->f_vmflags & TASK_VMARK_REMOVE)
-			ptsk->do_again = 1;
-		else
-			ptsk->f_vmflags |= TASK_VMARK_DO_AGAIN;
 	}
 	
 	/* Process the REMOVE flag */
@@ -1254,9 +1242,6 @@ tpool_mark_task_ex(struct tpool_t *pool,
 		vmflags &= sl_const_USR_MFLAGS;
 		if (TASK_VMARK_ENABLE_QUEUE & vmflags)
 			vmflags &= ~TASK_VMARK_DISABLE_QUEUE;
-		
-		if (TASK_VMARK_DO_AGAIN & vmflags)
-			vmflags &= ~TASK_VMARK_REMOVE;
 
 		if (!vmflags) 
 			continue;
@@ -1274,16 +1259,7 @@ tpool_mark_task_ex(struct tpool_t *pool,
 				changed = 1;
 			}
 		}
-
-		/* Process the DO_AGAIN flag */
-		if (stat.stat && (TASK_VMARK_DO_AGAIN & vmflags)) {
-			if (ptsk->f_vmflags & TASK_VMARK_REMOVE)
-				ptsk->do_again = 1;
-			else
-				ptsk->f_vmflags |= TASK_VMARK_DO_AGAIN;
-			changed = 1;
-		}
-
+	
 		/* Process the REMOVE flag */
 		if (!(TASK_VMARK_REMOVE & vmflags) ||
 			!(sl_const_allowed_rmflags & stat.stat)) {

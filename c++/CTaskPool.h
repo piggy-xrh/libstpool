@@ -183,6 +183,15 @@ class EXPORT CTaskPool
 		/* Return the number for tasks who has been marked with @REMOVED */
 		int  removeAll(bool dispatchedByPool = true);
 		
+		/* Mark the task with smFlags, if task is NULL, @mark returns the number of effected tasks,
+		 * or @mark returns the task's flags. 
+		 *
+		 *	 @smFlags can be one or more values listed below.
+		 *	 	CTask::sm_REMOVED_BYPOOL
+		 *	 	CTask::sm_REMOVED
+		 *	 	CTask::sm_DISABLE_QUEUE
+		 *	 	CTask::sm_ENABLE_QUEUE
+		 */
 		long mark(CTask *task, long smFlags);
 		
 		/* @detach is only be allowed to call in the task's
