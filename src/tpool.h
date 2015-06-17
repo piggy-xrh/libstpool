@@ -69,6 +69,7 @@ extern "C" {
 		(ptsk)->task_run  = run;\
 		(ptsk)->task_complete = complete;\
 		(ptsk)->task_arg = arg;\
+		(ptsk)->f_vmflags = TASK_VMARK_ENABLE_QUEUE;\
 	} while (0)
 
 struct task_t *tpool_new_task(struct tpool_t *pool);

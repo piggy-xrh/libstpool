@@ -1415,26 +1415,23 @@ tpool_add_task(struct tpool_t *pool, struct task_t *ptsk) {
 			((TASK_VMARK_REMOVE & ptsk->f_vmflags) && ptsk->do_again)) {
 			OSPX_pthread_mutex_unlock(&pool->mut);
 			return 0;
-		}
-			
-		goto ck;
-	}
+		}		
+	} else 
+		ptsk->th = NULL;
+		
 	/* Is the task allowed to be delivered ? */
 	if (ptsk->hp_last_attached == pool) {
 		if (TASK_VMARK_DISABLE_QUEUE & ptsk->f_vmflags) {
 			OSPX_pthread_mutex_unlock(&pool->mut);
 			return POOL_TASK_ERR_DISABLE_QUEUE;
 		}
-	} else
+	} else {
+		ptsk->f_vmflags &= ~TASK_VMARK_DISABLE_QUEUE;
 		ptsk->hp_last_attached = pool;
-	ptsk->th = NULL;
-ck:	
+	}
+
 	/* Check the pool status */
 	if (!(POOL_F_CREATED & pool->status)) {	
-		/* Reset the vmflags */
-		if (!ptsk->f_stat)
-			ptsk->f_vmflags = 0;
-		
 		switch (pool->status) {
 		case POOL_F_DESTROYING:
 			err = POOL_ERR_DESTROYING;
@@ -1478,7 +1475,7 @@ tpool_add_task_l(struct tpool_t *pool, struct task_t *ptsk) {
 
 	/* Reset the task's flag */
 	ptsk->f_stat = TASK_STAT_WAIT;
-	ptsk->f_vmflags &= TASK_VMARK_DISABLE_QUEUE;
+	ptsk->f_vmflags &= (TASK_VMARK_ENABLE_QUEUE|TASK_VMARK_DISABLE_QUEUE);
 	
 	/* The flag TASK_F_ADJPRI is always be set when the task
 	 * is requested being rescheduled. */
@@ -1735,7 +1732,7 @@ int tpool_scan_task_entry(struct tpool_t *pool, struct task_t *entry[], int n, i
 
 	/* Check the @npre */
 	if (&dumy_npre == npre)
-		return n == ok ? 0 : 1;
+		return (n == ok) ? 0 : 1;
 
 	if (*npre > ok) 
 		*npre = ok;
@@ -1791,7 +1788,7 @@ tpool_task_any_wait(struct tpool_t *pool, struct task_t *entry[], int n, int *np
 			pool->waiters += n;
 		} else
 			++ pool->waiters;
-
+			
 		/* Wait for the tasks' completions in ms millionseconds */
 		WPUSH(pool, WK_T_WAIT, tpool_wkid())
 		if (-1 != ms)
