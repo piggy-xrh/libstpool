@@ -2253,9 +2253,11 @@ tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
 		 * all the way may happen.
 		 */
 	} else {
+		long nt = (long)time(NULL), t_recomment = 0;
+
 		if (pool->n_long_resto < pool->threads_wait_throttle) {
 			/* Initialize the random sed */
-			OSPX_srandom(time(NULL));
+			OSPX_srandom(nt);
 
 			self->last_to = (pool->acttimeo + (unsigned)tpool_random(pool, self) % pool->randtimeo) 
 				/ pow(2, pool->n_long_resto);
@@ -2283,6 +2285,17 @@ tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
 		
 		if (self->last_to < 0) 
 			(self->last_to) &= 0x0000ffff;
+		
+		/* Adjust the rest time according to the time to create the latest thread  */
+		assert(self->last_to >= 0);
+		if (nt >= pool->crttime) {
+			pool->crttime = nt;
+			t_recomment = 5000;
+		} else
+			t_recomment = 6000 - 1000 * (nt - pool->crttime);
+
+		while (self->last_to < t_recomment)
+			self->last_to += t_recomment / 4;
 	} 
 }
 
@@ -2635,6 +2648,9 @@ tpool_add_threads(struct tpool_t *pool, struct tpool_thread_t *self, int nthread
 	if (pool->nthreads_peak < pool->nthreads_real_pool) 
 		pool->nthreads_peak = pool->nthreads_real_pool;
 	
+	/* Update the timer */
+	pool->crttime = (long)time(NULL);
+
 	return n;
 }
 

@@ -368,6 +368,7 @@ struct tpool_t {
 	
 	/* timeo */
 	int n_long_resto;
+	long crttime;
 
 	/* global env */
 	long threads_wait_throttle, acttimeo, randtimeo;

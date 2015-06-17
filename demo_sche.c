@@ -47,7 +47,7 @@ int main()
 	printf("%s\n", stpool_status_print(hp, NULL, 0));
 		
 	/* Add tasks */
-	times = 90000;
+	times = 900;//00;
 	arg = (int *)malloc(times * sizeof(int));
 	for (i=0; i<times; i++) {
 		/* It may take a long time to load a large amount of tasks 
@@ -81,7 +81,7 @@ int main()
 	now = time(NULL);
 	printf("--OK. finished. <arg: %d> %s\n%s\n", 
 		sum, ctime(&now), stpool_status_print(hp, NULL, 0));
-#if 0
+#if 1
 	/* You can use debug library to watch the status of the pool */
 	while ('q' != getchar()) {
 		for (i=0; i<40; i++)
