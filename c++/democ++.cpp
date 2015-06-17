@@ -11,8 +11,7 @@ using namespace std;
 class myTask:public CPoolTask<myTask>
 {
 	public:
-		myTask(CTaskPool *p, bool autoFree = false): 
-			CPoolTask<myTask>("mytask", p), m_autoFree(autoFree) {}
+		myTask(CTaskPool *p): CPoolTask<myTask>("mytask", p) {}
 		~myTask() {}
 
 	private:
@@ -36,13 +35,11 @@ class myTask:public CPoolTask<myTask>
 			 * we should call @detach to tell the pool to remove the 
 			 * task from the pool before executing its completion routine
 			 * completely */
-			if (m_autoFree) {
+			if (getUserFlags()) {
 				getParent()->detach(this);
 				delete this;
 			}
 		}
-	private:
-		bool m_autoFree;
 };
 
 int main()
@@ -74,7 +71,8 @@ int main()
 	/* Test running amount of tasks */
 	pool->suspend();
 	for (int i=0; i<1000; i++) {
-		task = new myTask(pool, true);
+		task = new myTask(pool);
+		task->setUserFlags(0x1);
 		task->queue();		
 	}
 	pool->resume();

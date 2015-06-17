@@ -31,7 +31,7 @@
 #include <list>
 #include "CMPool.h"
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(WIN32) || defined(_WIN64)
 #ifdef _USRDLL
 #define EXPORT __declspec(dllexport)
 #else
@@ -191,7 +191,7 @@ class EXPORT CTaskPool
 		/* If you want to wake up the WAIT functions such as @wait, @waitAll, @waitAny,
 		 * @waitStat and @waitQueueEnabled, you can save the wakeID by calling @getThreadID,
 		 * before your calling these WAIT functions, and then you can call @wakeup with wakeID 
-		 * to force the wait functions return with error code ep_WOKEUP.
+		 * to force the wait functions returning with error code ep_WOKEUP.
 		 *
 		 *   model:
 		 *          thread1                      thread2
@@ -266,6 +266,10 @@ class EXPORT CTask
 		}
 		inline CTaskPool *getParent() const {return m_parent;}
 		
+		/* Get/Set the user flags. (0 ~ 0x7f) */
+		long getUserFlags();
+		long setUserFlags(long uflags);
+
 		struct attr 
 		{
 			/* If permanent is not true, the task will be reset 
@@ -345,7 +349,7 @@ class EXPORT CTask
 		/* The working routine and completion routine of the task.
 		 * the subclass will implement them to do his customed work. */
 		virtual int   onTask() = 0;
-		virtual void  onTaskComplete(long sm, int errCode) = 0;
+		virtual void  onTaskComplete(long sm, int errCode) {};
 	protected:
 		friend class CTaskPool;
 		

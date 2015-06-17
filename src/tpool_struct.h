@@ -168,8 +168,8 @@ struct task_t {
 
 	/* The reference of the task */
 	uint8_t ref;
+	uint8_t user_flags:7;
 	uint8_t do_again:1;
-	uint8_t resv:7;
 
 	/* The priority attribute of the task */
 	uint16_t pri:7;

@@ -63,6 +63,16 @@ const char *CTask::taskName() const
 	return getProxy()->task_name;
 }
 
+long CTask::getUserFlags()
+{
+	return stpool_task_get_userflags(getProxy());
+}
+
+long CTask::setUserFlags(long uflags)
+{
+	return stpool_task_set_userflags(getProxy(), uflags);
+}
+
 void CTask::setAttr(const attr& at)
 {
 	struct schattr_t impl = {

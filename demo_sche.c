@@ -30,7 +30,6 @@ int  task_run(struct sttask_t *ptsk) {
 }
 
 void task_complete(struct sttask_t *ptsk, long vmflags, int code) {
-	printf("complete.\n");
 }
 
 int main()
@@ -48,7 +47,7 @@ int main()
 	printf("%s\n", stpool_status_print(hp, NULL, 0));
 		
 	/* Add tasks */
-	times = 900;//00;
+	times = 90000;
 	arg = (int *)malloc(times * sizeof(int));
 	for (i=0; i<times; i++) {
 		/* It may take a long time to load a large amount of tasks 
@@ -59,7 +58,6 @@ int main()
 		}
 		arg[i] = i;
 		stpool_add_routine(hp, "sche", task_run, task_complete, (void *)&arg[i], NULL);	
-		stpool_add_routine(hp, "sche", task_run, NULL, (void *)&arg[i], NULL);	
 	}
 	printf("\nAfter having executed @stpool_add_routine for %d times:\n"
 		   "--------------------------------------------------------\n%s\n", 
@@ -83,10 +81,9 @@ int main()
 	now = time(NULL);
 	printf("--OK. finished. <arg: %d> %s\n%s\n", 
 		sum, ctime(&now), stpool_status_print(hp, NULL, 0));
-#if 1
+#if 0
 	/* You can use debug library to watch the status of the pool */
 	while ('q' != getchar()) {
-		printf("%d\n", ++j);
 		for (i=0; i<40; i++)
 			stpool_add_routine(hp, "debug", task_run, NULL, &sum, NULL);	
 	}

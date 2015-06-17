@@ -30,7 +30,7 @@
 #include "ospx_type.h"
 #include "ospx_errno.h"
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(WIN32) || defined(_WIN64)
 #undef EXPORT
 
 #ifdef _DLL_IMPORT

@@ -30,8 +30,12 @@
 #include <assert.h>
 #include <math.h>
 
-#if !defined(NDEBUG) && !defined(_WIN32)
+#if defined(_WIN32) || defined(WIN32) || defined(_WIN64)
+#define _WIN
+#else
+#ifndef NDEBUG
 #include <sys/prctl.h>
+#endif
 #endif
 
 #include "mpool.h"
@@ -44,7 +48,7 @@
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 #endif
 
-#ifdef _WIN32
+#ifdef _WIN
 	#define PRI64 "%I64"
 #else	
 	#define PRI64 "%ll"
@@ -142,7 +146,7 @@ tpool_delete_task(struct tpool_t *pool, struct task_t *ptsk) {
 			free(ptsk);
 	} else {
 		tpool_delete_task_l(pool, ptsk);
-		OSPX_pthread_mutex_unlock(&(pool)->mut);
+		OSPX_pthread_mutex_unlock(&pool->mut);
 	}
 } 
 
@@ -196,7 +200,7 @@ tpool_GC_run(struct task_t *ptsk) {
 	struct task_t *obj;
 	struct tpool_thread_t *th = ptsk->th;
 
-#if !defined(NDEBUG) && !defined(_WIN32)
+#if !defined(NDEBUG) && !defined(_WIN)
 	prctl(PR_SET_NAME, ptsk->task_name);
 #endif
 	
@@ -216,10 +220,7 @@ tpool_GC_run(struct task_t *ptsk) {
 }
 
 static int 
-tpool_GC_notify_run(struct task_t *ptsk) {
-	/* We do nothing */
-	return 0;
-}
+tpool_GC_notify_run(struct task_t *ptsk) {/* We do nothing */return 0;}
 
 static void
 tpool_GC_notify_complete(struct task_t *ptsk, long vmflags, int code) {
@@ -230,6 +231,13 @@ tpool_GC_notify_complete(struct task_t *ptsk, long vmflags, int code) {
 
 	/* Reset the flag */
 	pool->b_GC_queued = 0;
+}
+
+long
+tpool_set_userflags(struct task_t *ptsk, long uflags) {
+	ptsk->user_flags = uflags & 0x7f;
+
+	return ptsk->user_flags;
 }
 
 void 
@@ -682,7 +690,7 @@ tpool_status_print(struct tpool_t *pool, char *buffer, size_t bufferlen) {
 	static char sbuffer[490] = {0};
 	struct tm *p_tm;
 	struct tpool_stat_t pstat;
-#ifdef _WIN32
+#ifdef _WIN
 	#define snprintf _snprintf
 #endif
 	if (!buffer) {
@@ -1481,8 +1489,7 @@ tpool_add_task_l(struct tpool_t *pool, struct task_t *ptsk) {
 	 * is requested being rescheduled. */
 	if (TASK_F_ADJPRI & ptsk->f_mask) {
 		ptsk->f_mask &= ~TASK_F_ADJPRI;
-		if (ptsk->pri) 
-			ptsk->pri_q = (ptsk->pri < pool->avg_pri) ? 0 : 
+		ptsk->pri_q = (ptsk->pri < pool->avg_pri) ? 0 : 
 				((ptsk->pri + pool->avg_pri -1) / pool->avg_pri -1);
 	
 	} else if ((TASK_F_PRI_ONCE & ptsk->f_mask) && 
@@ -2020,7 +2027,7 @@ tpool_thread_status_change(struct tpool_t *pool, struct tpool_thread_t *self, ui
 	}
 	case THREAD_STAT_RUN: 
 		assert(__curtask);		
-#if !defined(NDEBUG) && !defined(_WIN32)
+#if !defined(NDEBUG) && !defined(_WIN)
 		if (__curtask->task_name && strlen(__curtask->task_name))
 			prctl(PR_SET_NAME, __curtask->task_name);
 #endif

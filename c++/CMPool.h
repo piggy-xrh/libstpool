@@ -30,7 +30,7 @@
 #include <string>
 #include <map>
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(WIN32) || defined(_WIN64)
 #ifdef _USRDLL
 #define EXPORT __declspec(dllexport)
 #else
@@ -76,7 +76,7 @@ class EXPORT CAllocator
 			/* The max number of objects that can be received from the allocators */
 			int nMaxAlloc;
 
-			/* Each memory block size(4K/8K/16K/..) of the allocator.
+			/* Block size(4K/8K/16K/..) of the allocator.
 			 * block is the base unit for the allocator to expand the memories */
 			size_t nBlkSize;
 		};

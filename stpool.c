@@ -72,7 +72,7 @@ stpool_task_new(const char *name,
 	/* Create a global object pool */
 	if (!sl_mp_initialized) {
 		struct mpool_t *mp;
-		
+	
 		if (1 == ++ sl_mp_initialized) {
 			mp = (struct mpool_t *)malloc(sizeof(struct mpool_t));
 			if (mp) {
@@ -133,6 +133,16 @@ void stpool_task_delete(struct sttask_t *ptsk) {
 		mpool_delete(gs_mp, rptsk);
 	} else
 		free(rptsk);
+}
+
+long  
+stpool_task_set_userflags(struct sttask_t *ptsk, long uflags) {
+	return tpool_task_set_userflags((struct task_t *)ptsk, uflags);
+}
+
+long  
+stpool_task_get_userflags(struct sttask_t *ptsk) {
+	return tpool_task_get_userflags((struct task_t *)ptsk);
 }
 
 void 
@@ -348,16 +358,14 @@ int
 stpool_task_any_wait(HPOOL hp, struct sttask_t *entry[], int n, int *npre, long ms) {
 	return tpool_task_any_wait((struct tpool_t *)hp,
 	                  (struct task_t **)entry,
-					  n, npre,
-					  ms);
+					  n, npre, ms);
 }
 
 int  
 stpool_task_waitex(HPOOL hp, int (*sttask_match)(struct stpool_tskstat_t *, void *), void *arg, long ms) {
 	return tpool_task_waitex((struct tpool_t *)hp,
 	                  (int (*)(struct tpool_tskstat_t *, void *))sttask_match,
-					  arg,
-					  ms);
+					  arg, ms);
 }
 
 int  

@@ -75,6 +75,8 @@ struct task_t *tpool_new_task(struct tpool_t *pool);
 void tpool_delete_task(struct tpool_t *pool, struct task_t *ptsk);
 void tpool_task_setschattr(struct task_t *ptsk, struct xschattr_t *attr);
 void tpool_task_getschattr(struct task_t *ptsk, struct xschattr_t *attr);
+#define tpool_task_set_userflags(ptsk, uflags) ((ptsk)->user_flags = uflags & 0x7f, (ptsk)->user_flags)
+#define tpool_task_get_userflags(ptsk) (ptsk)->user_flags
 
 /* --------------APIs about the pool ------------------- */
 int  tpool_create(struct tpool_t *pool, int q_pri, int maxthreads, int minthreads, int suspend);

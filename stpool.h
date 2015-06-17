@@ -30,7 +30,7 @@
 #include <time.h>
 #include <stdlib.h>
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(WIN32) || defined(_WIN64)
 #ifdef _USRDLL
 #define EXPORT __declspec(dllexport)
 #else
@@ -334,6 +334,19 @@ EXPORT struct sttask_t *stpool_task_clone(struct sttask_t *ptsk, int clone_schat
  * 	    None
  */
 EXPORT void  stpool_task_delete(struct sttask_t *ptsk);
+
+/*@stpool_task_set_userflags/stpool_task_get_userflags
+ *     Set/Get the user flags for the task.  (uflags' value range is from 0 to 0x7f)
+ *
+ * Arguments: 
+ * 		@ptsk   [in] The task object.
+ * 		@uflags [in] The private flags that the user want to set
+ *
+ * Return:
+ * 	    The user flags of the task
+ */
+EXPORT long  stpool_task_set_userflags(struct sttask_t *ptsk, long uflags);
+EXPORT long  stpool_task_get_userflags(struct sttask_t *ptsk);
 
 /*@stpool_task_setschattr
  *     Set the scheduling attribute for the task
