@@ -2288,9 +2288,9 @@ tpool_get_restto(struct tpool_t *pool, struct tpool_thread_t *self) {
 		
 		/* Adjust the rest time according to the time to create the latest thread  */
 		assert(self->last_to >= 0);
-		if (nt >= pool->crttime) 
+		if (nt <= pool->crttime) 
 			pool->crttime = nt;
-		t_recomment = 5000 - 1000 * (nt - pool->crttime);
+		t_recomment = 4600 - 1000 * (nt - pool->crttime);
 
 		while (self->last_to < t_recomment)
 			self->last_to += t_recomment / 4;
