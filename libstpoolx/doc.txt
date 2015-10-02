@@ -1,0 +1,621 @@
+﻿简介:
+      stpool是一个轻便高效的线程池/任务池库. stpool被开启后,使用者可以往stpool添加任务,
+   stpool会根据当前的配置自动启动线程去执行这些任务,当stpool中没有任务时,线程会自动退出
+   以避免占用过多系统资源.
+
+
+应用场景:
+ 
+        适合间歇性或者持续性的并发程度高,任务执行时间较短的应用系统(比如: 高并发服务器 
+   或者实现asio),也可应用在普通的工作线程组的使用
+	
+
+特性:
+ 
+     1. 采用c语言编写,提供丰富的API接口,提供对任务粒度的跟踪,支持c++
+   
+     2. 对os层进行了抽象,使具有良好的跨平台的能力(支持win32,linux,unix,arm,...)
+   
+     3. 轻便快速, API接口自然易于使用,可直接商用
+   
+     4. 能随时调整和控制线程池的线程数目,内部已智能维护力求
+        其占用最小的系统资源且最快速的来调度任务
+     
+     5. 提供优先级任务,内置内存对象池,避免内存碎片化
+
+ 模型:
+                                  threadManager (线程管理器)
+                                        |
+         ---------------------------------------------------------------       
+          workingThread0            workingThread1   ...           workingThreadn                  
+              \                         |                            /
+               \------------------------|---------------------------/
+                                        ▲
+                                        |
+                                   taskScheduler (任务调度器)
+                                        |
+         -------------------------------▲--------------------------------
+ 
+               pri_q[0]       pri_q[1]      .....        pri_q[10]      (任务池)
+           |--------------|--------------|------------|---------------|
+           | tsk9_top     | tsk14_top    |   ...      | task99_top    |
+           | tsk9_back    | tsk10_back   |            | task99_back   | 
+           | tsk7_back    | tsk9_back    |            | task90_back   |
+           | tsk6_top     |              |            |   ....        |
+           |  .........   |              |            |               |
+           | tsk0_top     |              |            |               |
+           | tsk0_back    |              |            |               |
+           |--------------|--------------|------------|---------------|
+
+   tskX_Y (X表示优先级, Y表示策略),比如 tsk9_top表示task的优先级为9，使用的是
+          STP_SCHE_TOP 策略排序,见stpool.h头文件
+
+   pri_q[x] 表示优先级队列(图示展示的为10个, 其数目可由用户在使用@stpool_create创建线程池是根据
+            情况创建,每个队列将容纳100/pri_q_num个优先级的任务. (比如如果pri_q_num为1，则只有一个
+            队列，所有的任务都会在该队列上按优先级排序)
+   
+  taskScheduler 任务调度器,从任务池中选中任务供线程池调度,本库是按照优先级来调度的，优先级越高，
+            越先被调度,所以如上图中, 当pri_q[10] ~ pri_q[1]的任务全部调度完毕后,pri_q[0]中的任务
+            才开始被调度，
+
+    @stpool_add_task)/@stpool_add_routine往任务池中添加任务. threadManager线程池管理器
+根据任务池中的任务状况和系统负载和当前任务执行情况来启动合适数量的线程池来执行任务. taskScheduler
+负责从任务池中选中任务来派发给wokingThread工作线程来执行任务.
+
+
+ API使用:
+     
+     ----------------------任务APIs--------------------
+     1. size_t stpool_task_size();
+         描述:
+                    返回任务对象的大小. 用户可以自己动态分配内存管理task对象,然后调用stpool_task_init
+               来初始化任务对象.
+	
+         参数:
+                 无
+
+         返回值:
+	       任务对象的大小
+
+      2. void stpool_task_init(struct sttask_t *ptsk,
+                   const char *name, int (*run)(struct sttask_t *ptsk),
+                   void (*complete)(struct sttask_t *ptsk, long vmflags, int code),
+                   void *arg);
+ 	 描述:
+                初始化任务对象.(仅需要初始化一次)
+         参数:
+                 [in] ptsk 任务对象
+                 [in] name 任务名
+                 [in] run  任务执行过程
+                 [in] complete 任务完成回调过程
+                 [in] arg  任务参数
+         返回值:
+                 无
+
+      3. struct sttask_t * stpool_task_new(const char *name, 
+                   int (*run)(struct sttask_t *ptsk),
+                   void (*complete)(struct sttask_t *ptsk, long vmflags, int code),
+                   void *arg);
+          描述:
+                   从内置的对象池中分配一个任务对象并初始化,该对象需手动调用stpool_task_delete
+                销毁.
+         参数:
+                 [in] ptsk 任务对象
+                 [in] name 任务名
+                 [in] run  任务执行过程
+                 [in] complete 任务完成回调过程
+                 [in] arg  任务参数
+         返回值:
+                 内存足够则返回任务对象,否则返回NULL
+
+      4. struct sttask_t *stpool_task_clone(struct sttask_t *ptsk, int clone_schattr);
+         描述:
+                克隆一个任务对象,返回的任务对象需手动调用stpool_task_delete销毁
+         参数:
+                 [in] ptsk          源任务对象
+                 [in] clone_schattr 是否赋值ptsk对象的当前调度属性
+         返回值:
+                 内存足够则返回任务对象,否则返回NULL
+
+      5. void stpool_task_delete(struct sttask_t *ptsk);
+        描述:
+                    销毁由stpool_task_new/stpool_task_clone创建的任务对象. 
+              注意:
+                    只有任务处于自由状态,才可以安全销毁.
+
+                FAQ1: 怎样判断task是自由的?
+                      一个task被完全的"执行完毕"后,task就会被转变成自由状态.
+
+                      执行完毕的语义一般以task_complete的执行完毕(包括正常执行task_run
+                     后, 或者因为task被移除等导致的task_complete调用) 而告终. 对于没有
+                     task_complete的task,在执行完task_run后,该task就“执行完毕"了.
+                           
+                      
+                      下面的任一条件满足,则task就是自由的
+                      1.  stpool_task_is_free 返回非0值
+                      2.  stpool_task_wait() 等在任务上等待的函数返回0
+                      3.  0 == stpool_get_tskstat(hp, &stat)
+               
+                FAQ2: 是否可以在task的完成例程task_complete中销毁task ?
+                      
+                      正常来说是不可以的,因为pool在调用完task的task_complete后，还会继续
+                 访问task的信息来更新pool的内部状态,然后pool才会真正的将其从pool中移除,这个
+                 时候task就是自由的了，stpool_task_wait等在该task上等待的函数也会返回.
+                      所以如果在task_complete中销毁了task,会导致pool的后续访问出现访问违规.
+
+                      但为了满足一些应用销毁方便,libstpool提供了stpool_detach_task API来提前
+                 更新pool和task的内部状态, 这样即使还没完全执行完task的task_complete, task也
+                 转变成了自由状态. 所以在task_complete中调用stpool_detach_task后,就可以安全的
+                 销毁task了
+                   
+               FAQ3: 紧接着FAQ2,是否可以在task的task_run中销毁task. 比如一个task没有task_complete
+                     的情况 ?
+                     
+                     同FAQ2，对于只有task_run的task, 在task_run例调用stpool_detatch_task后也是可以
+                     安全销毁该task的.
+
+         参数:
+                 [in] ptsk     有@stpool_task_new/@stpool_task_clone返回的任务对象
+         返回值:
+                 内存足够则返回任务对象,否则返回NULL
+
+      6. void stpool_task_setschattr(struct sttask_t *ptsk, struct schattr_t *attr);
+         void stpool_task_getschattr(struct sttask_t *ptsk, struct schattr_t *attr);
+         描述:
+                 设置/获取任务的调度属性. 任务在被加入到任务池前可使用stpool_task_setschattr来设置
+              该任务的调度属性.
+         参数:
+                 [in] ptsk 任务对象
+
+                 [in] attr 调度属性
+         返回值:
+                 无
+
+     7.  int stpool_task_is_free(struct sttask_t *ptsk);
+          描述:
+                  判断一个任务当前是否处于自由状态,其等价于
+            (0 == stpool_get_tskstat(hp, &stat)),但速度更快
+
+         参数:
+                [in]  ptsk 任务对象
+        
+         返回值:
+                如果任务task处于自由状态,则返回非0值，否则返回0
+      
+
+      ----------------------APIs--------------------
+     1. const char *stpool_version();
+         返回libstpool库的版本 (格式为:年/月/日-版本号-描述)
+                 
+                 
+     2. HPOOL stpool_create(int maxthreads, int minthreads, int suspend, int pri_q_num)
+         描述:
+	    
+             创建一个线程池, 创建后可使用@stpool_release进行销毁.
+         参数:
+                 [in] maxthreads 限制线程池中最大的服务线程数
+
+                 [in] minthreads 预留的最小服务线程数. 当线程执行完任务后, 就绪队列里已经没有任何任务时,
+                                 将会有minthreads数目的线程将不会退出,而是进入休眠状态等待用户往其中添加
+                                 任务.其它额外的线程将会自动退出以节省系统资源. 
+
+                 [in] suspend    是否休眠线程池. 线程池中如果进入休眠状态,所有后续添加的任务就会放到等待队列,
+                                 而不会被调度.直到用户使用@stpool_resume(hp)来唤醒线程池.
+   
+ 
+                 [in] pri_q_num  优先级队列的数量. pool有100个优先级[0~99],  每个优先级队列将容纳100 / @pri_q_num
+                                 个优先级的任务, 优先级越高的任务会被优先调度,任务在投递到pool时候,首先会根据优先级
+                                 快速定位到要投递的队列. 一般没有优先级任务的或者优先级任务较少的1或者2就够了.
+                                 （pri_q_num 主要是为了过多优先级任务时的插入速度)
+         返回值:
+	     
+                 成功返回线程池句柄, 失败返回NULL
+  
+ 
+
+   3. long stpool_addref(HPOOL hp)
+         描述:
+                引用计数+1, stpool可以被其它模块组件公用,在递交给其它模块前可以使用@stpool_addref来递增引用计数
+              以确保线程池对象一直存在.当用户不需要使用时, 用户需要调用@stpool_release来递减其引用计数,当引用计
+              数变为0时, stpool将会自动被销毁. (@stpool_create成功后其引用计数为1).
+	
+         参数:
+                 [in]  hp   线程池句柄
+
+         返回值:
+	    
+                 当前线程池的引用计数
+
+   4. long stpool_release(HPOOL hp)
+            描述:
+                 引用计数-1
+
+            参数:
+                  [in]  hp   线程池句柄
+
+          返回值:
+	    
+                 当前线程池的引用计数
+
+          注意:
+              此函数不会阻塞,会立刻返回,当引用计数为0时, 用户不应该再操纵HPOOL句柄, 因为引用
+         计数为0时，表示句柄hp将被回收,将失效,pool会在后台被立刻销毁.
+
+              引用计数为0时,对线程池中的任务的影响.
+              1)当引用计数为0时,线程池仍处于suspended状态时,线程池内在排队的任务将会被移除
+         (任务的@task_complete将会被通知).
+
+              2)当引用计数为0时,线程池未处于suspended状态,线程池仍将会在后台执行完所有任务.只是
+          线程池的句柄不再有效,即用户已不能控制线程池. 当线程池中所有的任务被完后后,线程池将
+          自动被销毁. (同时这种情况下,任何任务的调度请求会被拒绝)
+          
+  
+   5. void stpool_set_activetimeo(HPOOL hp, long acttimeo, long randtimeo)
+            描述:
+	           设置线程池中线程等待任务的休眠时间. 当线程在没有任何任务可执行时，会进入
+                休眠状态,休眠一定时间后如果还没有任务唤醒它,则线程将会自动退出. 
+                (休眠时间是@acttimeo + random % @randtimeo s, ,默认的@acttimeo=20s, @randtimeo=30s)
+
+            参数:
+	    
+                  [in]  hp   线程池句柄
+                    
+          返回值:
+                   无
+
+   6. void stpool_adjust_abs(HPOOL hp, int maxthreads, int minthreads)
+           描述:
+	        调整线程池中的服务线程绝对数目. 此函数并不会阻塞. 
+             (参数条件: @maxthreads >=1, @minthread >=0, @minthreads <= @maxthreads)
+
+           参数:
+                 [in]  hp         线程池句柄
+                 [in] maxthreads  意义同@tpool_create参数
+                 [in] minthreads  意义同@tpool_create参数
+                    
+          返回值:
+	    
+                   无
+
+   7. void stpool_adjust(HPOOL hp, int maxthreads, int minthreads)
+         此函数同@stpool_adjust_abs，其区别在于stpool_adjust传入的参数是相对参数.
+         比如: 
+             stpool_adjust(hp, 1, 0);  表示将线程池的最大线程数量+1, 最小数量不变
+             stpool_adjust(hp, 0, -1); 表示将线程池中的最大线程数量不变，最小线程数量-1
+           
+   8. int  stpool_flush(HPOOL hp)
+         此函数用来设置线程状态，使之快速达到@stpool_adjust(_abs)设定的绝对状态. 因为在
+     如下情况#1时候, @stpool_adjust(_abs)并不会马上马上销毁任何线程，而只是将其唤醒，让其
+     自动在一定时间内(有@stpool_set_acttimeo)没有获得任务后才自动退出. 所以该函数一般情况下
+     可以不必使用,让pool自动在后头智能完成配置即可.
+          
+          #1:  @stpool_adjust(_abs) 最后设定的参数 @maxthreads >= pool->maxthreads &&
+                                                   @minthreads <  pool->minthreads
+   9. void stpool_adjust_wait(HPOOL hp)
+            描述:
+                   @stpool_adjust(_abs)/@stpool_flush可能会导致一些服务线程被标记为died
+                以便通知其在服务完当前任务后马上退出.@stpool_adjust_wait将等待pool内所有
+                被标记为died的线程全部退出后才返回.
+
+            参数:
+                 [in]  hp  线程池句柄
+                    
+          返回值:
+	    
+        	     无
+
+   10. void stpool_suspend(HPOOL hp, int wait)
+          描述:
+                   使线程池进入睡眠, 当线程池进入睡眠后,除了当前正在被线程池调度的任务外,线程池将不在继续执行
+                任务,新任务被投递到线程池后，会一直处于等待状态,当用户调用@stpool_resume唤醒线程池后,线程池会
+                继续执行任务
+
+          参数: 
+                   [in]    hp     线程池句柄
+                   [in]    wait   是否等待正在调度的任务被执行完.
+                         
+          返回值:
+                  无
+  
+   11. void stpool_resume(HPOOL hp)
+          描述:
+                唤醒线程池.线程池被唤醒后将立马调度在排队等待的任务.
+
+            参数:
+                   [in]    hp   线程池句柄
+                                        
+          返回值:
+                  无
+
+   12. struct stpool_stat_t * stpool_getstat(HPOOL hp, struct stpool_stat_t *stat)
+            描述:
+	          获取线程池的状态信息
+            参数:
+                 [in]      hp   线程池句柄
+                 [in/out] stat  待填充的状态对象
+          返回值:
+                 线程池的状态信息
+
+
+   13. const char *stpool_status_print(HPOOL hp, char *buffer, size_t bufferlen)
+            描述:
+                 打印线程池的状态信息到buffer
+            参数:
+                 [in]    hp         线程池句柄
+                 [out]   buffer     待填充的buffer,如果为NULL，则使用内置的静态buffer
+                 [in]   bufferlen   buffre的长度
+          返回值:
+               如果buffer不为NULL,则返回buffer, 否则返回内置的静态buffer
+
+
+   14. int  stpool_add_task(HPOOL hp, struct sttask_t *ptsk)
+           描述:
+                  投递一个任务到线程池. 任务被投递到线程池后将会被线程池调度,tsk->task_run将会被执行,当
+               tsk->task_run执行完毕后,如果tsk->task_complete不为NULL，则tsk->task_complete将会被调用以
+               通知用户任务完成. 同时用户也可以使用stpool_task_wait来等待任务完成.
+
+                  如果重复调用stpool_add_task, stpool_add_task将保证ptsk一定会只有一个存在于任务池的排队
+             队列中.其细节行为如下:
+                  1. 如果任务没有投递到hp，则直接投递到hp的等待队列
+                  2. 如果任务已经存在于hp的等待队列，则stpool_add_task不做任何事，马上返回
+                  3. 如果任务没在等待队列.但在dispatching队列(被移除的待回调通知移除任务) 或者 正在
+                     被线程池正常调度时, 该任务会被做一个DO_AGAIN标记. 当这个任务在被执行完(被移除或者
+                     被正常调度完成)后,将会再次自动的被投递到任务池中.
+                    
+                     如果任务被标记为DO_AGAIN后,然后又被stpool_remove_pending_task/stpool_mark_task(ex)给
+                  确定为移除，这时候这些函数仅仅是将DO_AGAIN标记给设置为0.同时也不会比较该任务为移除状态,
+                  所以当然也不会导致task_complete的再次调用.
+                  
+                      DO_AGAIN的值只有0和1,意味这不会被积累.
+                       
+                      例如:
+                           一个任务被移除了,它的task_complete正在被调用期间这时候另外一个线程调用执行以下调用.
+                      stpool_add_task(hp, ptsk);
+                      stpool_add_task(hp, ptsk);
+                      stpool_add_task(hp, ptsk);
+                      stpool_remove_pending_task(hp, ptsk);
+                        
+                      将不会产生任何作用.因为stpool_add_task虽然调用三次，但是和调用一次是一样的效果,任务的
+                      DO_AGAIN被标记.但稍后stpool_remove_pending_task又将其移除.
+
+           参数:
+                   [in]    hp      线程池句柄
+                   [in]    ptsk    任务对象
+                                        
+          返回值:
+                如果投递成功，则返回0，反则返回错误码(STPOOL_XX)
+                STPOOL_ERR_DESTROYING
+                STPOOL_ERR_NOCREATED
+                STPOOL_ERR_THROTTLE
+                STPOOL_TASK_ERR_BUSY 
+                STPOOL_TASK_ERR_DISABLE_QUEUE
+
+   15. int  stpool_add_routine(HPOOL hp, 
+                          const char *task_name,
+                          int (*task_run)(struct sttask_t *ptsk), 
+                          int (*task_complete)(struct sttask_t *ptsk, long vmflags, int task_code),
+                          void *task_arg, struct schattr_t *attr)
+              描述:
+                      投递一个执行路径到线程池. 参数@task_run将会被线程池执行,执行完后，如果参数@task_complete
+                   不为NULL,则@task_complete将会被调用来通知用户@task_run已经执行完毕.
+
+              参数:
+                     [in]    hp                线程池句柄
+                     [in]    task_name         任务描述字串
+                     [in]    task_run          需要被执行的回调
+                     [in]    task_complete     完成回调通知
+                     [in]    task_arg          任务参数
+                     [in]    attr              任务的调度属性
+                                        
+          返回值:
+                 如果投递成功，则返回0，反则返回错误码(STPOOL_XX)
+                  STPOOL_ERR_DESTROYING
+                  STPOOL_ERR_NOCREATED
+                  STPOOL_ERR_THROTTLE
+                  STPOOL_TASK_ERR_NOMEM
+
+   16. void stpool_detach_task(HPOOL hp, struct sttask_t *ptsk);
+   
+   17. long stpool_gettskstat(HPOOL hp, struct stpool_tskstat_t *stat);
+            描述:
+                  获取任务的状态信息
+            参数:
+                  [in]      hp       线程池句柄
+                  [in/out]  stat     任务状态对象, tsk->task需要被设置带查询的任务地址
+          返回值:
+                    任务的状态.
+                          0             任务不存在
+                    TASK_F_WAIT         处于排队等待状态
+                    TASK_F_SCHEDULING   处于被调度状态(即@task_run正在被执行或即将被执行)
+                    TASK_F_DISPATCHING  处于被分发状态(任务已被标记为移除)
+                    TASK_F_SWAPED       处于被换出状态(这是线程池处于休眠状态,即用户调用了@stpool_suspend)
+                    TASK_F_WAIT_PENDING 任务没有被执行完毕,但用户重新调用了stpool_add_task来重新调度该任务
+
+                   同时参数@stat将会被填充task的具体状态信息.
+
+
+   18. long  stpool_mark_task(HPOOL hp, 
+			 struct sttask_t *ptsk,
+                         long lflags);
+            描述:
+                     标记线程池中的任务,所做的标记将会被记录在task的内置的vmflags成员中
+            参数:
+	    
+                   [in]    hp        线程池句柄
+                   [in]    ptsk      需要标记的ptask对象, 如果为NULL，则所有当前存在于线程池中的任务
+                                     都会尝试使用lflags进行标记.
+                                    
+                   [in]    lflags    用户可以在其中可以使用下面的掩码来标记任务.
+                             
+                                       STMASK_VMARK_REMOVE
+                                             移除该任务,task_complete将由stpool_mark_task负责调用
+
+                                       STMASK_VMARK_REMOVE_BYPOOL
+ 					     移除该任务,task_complete将由pool负责调用
+                                       
+                                       STMASK_VMARK_ENABLE_QUEUE
+                                       STMASK_VMARK_DISABLE_QUEUE
+
+                                       注意: 没有在排队的任务不能被标记为STMASK_VMARK_REMOVE或STMASK_VMARK_REMOVE_BYPOOL
+                                             即如果任务状态满足 (STTASK_F_SCHEDULING|STTASK_F_DISPATCHING) & stat,
+                                             则移除任务的标记没有任何作用.
+
+          返回值:
+	    
+              如果ptsk不为NULL，则返回ptsk的当前状态.否则返回被lflags标记影响的任务数
+
+   19. int stpool_mark_task_ex(HPOOL hp, long (*tskstat_walk)(struct stpool_tskstat_t *stat, void *arg), void *arg)
+       描述:
+            标记/访问线程池中的任务
+       参数:
+	    
+                   [in]    hp           线程池句柄
+                   [in]    tskstat_walk 访问回调.
+                                         如果该回调返回-1,则stpool_mark_task_ex将会返回.
+                                                   返回0，则继续访问下一个任务
+                                                   其它,  则stpool_mark_task_ex会将其当做任务标记,
+                                                          去标记当前传递给stat参数的stat->ptsk里面的
+                                                          对象
+                   [in]    arg          回调参数
+     
+       返回值:
+	    被tskstat_walk标记影响的任务数
+              
+
+   20. void stpool_throttle_enable(HPOOL hp, int enable)
+            描述:
+	           使能线程池的瓶塞, 当瓶塞被使能时,任何都不能被添加到线程池, @stpool_add_task/
+                @stpool_add_routine会返回错误码： STPOOL_ERR_THROTTLE.
+                    
+
+            参数:
+                  [in]    hp     线程池句柄
+                  [in]   enalbe  1:使能线程池的瓶塞  0:移除瓶塞                           
+          返回值:
+	    
+                 无
+
+   21. int  stpool_throttle_wait(HPOOL hp, long ms)
+             描述:
+                     等待线程池的瓶塞被移除, 当瓶塞被使能时,当用户再次调用@stpool_throttle_enalbe(hp, 0)
+                  时该函数才会返回.
+             参数:
+                   [in]    hp    线程池句柄
+                   [in]    ms    等待的毫秒数.-1表示INFINITE
+                                        
+          返回值:
+                 0则表示瓶塞被移除, 返回1则表示等待超时瓶塞还没有被移除.
+
+
+   22. int  stpool_remove_pending_task(HPOOL hp, struct sttask_t *ptsk, int dispatched_by_pool);
+           描述:
+                移除正在排队等待的任务
+
+            参数:
+                     [in]    hp                 线程池句柄
+                     [in]    ptsk                需要移除的任务对象, 如果tsk为NULL，则表示移除线程池中所有等待的任务,
+                                                移除的任务的task_complete将会被调用,@task_code=POOL_ERR_REMOVE
+
+                     [in]    dispatched_by_pool 如果为1,任务的task_complete将由pool调用,同时task_complete
+                                                的参数@vmflags被标记上STTASK_VMARK_REMOVE_BYPOOL.否则task_complete
+                                                将由stpool_remove_pending_task本身负责调用. @vmflags被标记上STTASK_VMARK_REMOVE
+                                    
+                                        
+          返回值:
+                  如果投递成功，则返回0，反则返回错误码(POOL_XX)
+
+
+   23. int  stpool_task_wait(HPOOL hp, struct sttask_t *ptsk, long ms)
+            描述:
+                    等待任务被完成并移出线程池. (当任务的@task_complete被执行完毕后才返回. 如果该任务的@task_complete返回
+                 非0值导致该任务被再次调度的话,stpool_task_wait也是不会返回的,因为它仍然是非自由的,还要被调度)
+
+            参数:
+                     [in]    hp     线程池句柄
+                     [in]    tsk    等待的被完成的任务对象,如果为NULL,则表示等待任务池中所有的任务
+                     [in]    ms     等待的毫秒数,如果为-1,则表示一直等待，直到任务成为自由状态
+                                        
+          返回值:
+                  任务完成并被移出线程池则返回0，返回1则表示等待超时, -1则表示被stpool_wakeup唤醒
+
+   24. int  stpool_task_waitex(HPOOL hp, int (*sttask_match)(struct stpool_tskstat_t *stat, void *arg), void *arg, long ms);
+          描述:
+                   功能同@stpool_task_wait, 只是这里使用@sttask_match来匹配一个任务. pool将会将线程池内所有的任务状态全部传递
+               给@sttask_match,只要@sttask_match返回非0,则表示任务匹配，将在该任务上等待.直至任务完成,然后stpool_task_wait_ex
+               会重新扫描一遍任务队列,当sttask_match遍历完所有的任务后全部返回0,则表示线程池内没有@sttask_match匹配存在的
+               任务,此时stpool_waitex会返回.
+
+          参数:
+                     [in]    hp              线程池句柄
+                     [in]    sttask_match    匹配任务的回调
+                     [in]    arg             @sttask_match的参数
+                     [in]    ms              等待的毫秒数,如果为-1,则表示一直等待，直到任务成为自由状态
+                                        
+          返回值:
+                  同stpool_task_wait
+  
+   25. int stpool_task_wait2(HPOOL hp, struct sttask_t *entry, int n, long ms);
+         描述: 
+              等待@entry数组里面所有的任务不在hp中后才返回.
+         
+         参数:
+                     [in]    hp              线程池句柄
+                     [in]    entry           待等待的任务数组
+                     [in]    n               entry数组中任务的个数
+                     [in]    ms              等待的毫秒数,如果为-1,则表示一直等待
+          返回值:
+                 同stpool_task_wait
+
+   26. int stpool_task_any_wait(HPOOL hp, struct sttask_t *entry, int n, int *npre, long ms);
+         描述:
+               继上一次后,等待任意一个entry组中的task完成.
+         
+         参数:
+                    [in]     hp              线程池句柄
+                    [in]     entry           待等待的任务数组,如果entry为NULL,则参数n,npre会被忽略,此时等价于
+                                                stpool_task_wait(hp, NULL, ms);       
+                    [in]     n               entry数组中任务个数
+                    [in/out] npre            上一次在entry中已经被完成的task数目:
+                                                 如果npre为NULL, 则表示所有数组中的任务被完成后,该函数才返回,
+                                              此时等价于 stpool_task_wait2(hp, entry, n, ms)
+                                                 如果npre不为NULL, 则表示当数组中的任务被完成数目大于*npre个,
+                                              stpool_task_any_wait就返回,同时,*npre被填充为当前检测到entry数组中
+                                              被hp完成的任务个数. (*npre不能大于n)
+                    [in]     ms              等待的毫秒数,如果为-1,则表示一直等待
+        
+         返回值:
+                同stpool_task_wait
+   
+   27. int stpool_status_wait(HPOOL hp, int n_max_pendings, long ms);
+        描述:
+                等待任务池内排队的任务数不大于 n_max_pendings 个任务.
+         
+         参数:
+                    [in]     hp              线程池句柄
+                    [in]    n_max_pendings   等待排队的任务个数阀值
+                    [in]     ms              等待的毫秒数,如果为-1,则表示一直等待
+        
+         返回值:
+               0 成功, 1 超时, -1 被stpool_wakeup唤醒
+
+  28. long stpool_wkid();
+          描述:
+                  获取等待函数的唤醒ID,在调用wait函数等待前,可使用stpool_wkid先获取该线程的
+              唤醒id，这样以后可在其它线程中使用stpool_wakeup唤醒该等待函数.
+         
+         参数:
+              无
+        
+         返回值:
+               本线程的等待函数唤醒id. (实际上返回值就是该线程的ID号)
+
+  29. void stpool_wakeup(HPOOL hp, long wkid);
+          描述:
+                根据wkid唤醒处在等待状态的线程.
+         
+         参数:
+              [in]     hp              线程池句柄
+              [in]     wkid            唤醒id,如果为-1，则唤醒所有当前正在等待的函数
+        
+         返回值:
+               无
