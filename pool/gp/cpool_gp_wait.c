@@ -145,7 +145,7 @@ __cpool_gp_w_waitl(cpool_gp_t *gpool, long type, int id, void *arg, long ms)
 				 * before our returing from this function if its reference is not 
 				 * zero 
 				 */
-				assert (ptasks[idx]->ref || !(eTASK_VM_F_CACHE & ptasks[idx]->f_vmflags));
+				assert (ptasks[idx]->ref || !(eTASK_VM_F_LOCAL_CACHE & ptasks[idx]->f_vmflags));
 				
 				++ ptasks[idx]->ref;
 				ptasks[idx]->f_global_wait = 1;

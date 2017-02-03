@@ -391,7 +391,7 @@ cpool_rt_task_queue(void *ins, ctask_t *ptask)
 	 * FIX BUGS: If user calls @stpool_task_queue in the Walk functions,
 	 * it'll take us into crash if the app is linked with the debug library.
 	 */
-	assert (eTASK_VM_F_CACHE & ptask->f_vmflags &&
+	assert (eTASK_VM_F_LOCAL_CACHE & ptask->f_vmflags &&
 			(!ptask->f_stat || (eTASK_STAT_F_WAITING|eTASK_STAT_F_SCHEDULING) & ptask->f_stat));
 
 	if (ptask->f_stat) {

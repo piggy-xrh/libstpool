@@ -138,7 +138,7 @@ stpool_task_delete(struct sttask *ptask)
 	ctask_t *ptask0 = TASK_CAST_DOWN(ptask);
 
 	assert (ptask && ___smc);
-	assert (!(eTASK_VM_F_CACHE & ptask0->f_vmflags));
+	assert (!(eTASK_VM_F_LOCAL_CACHE & ptask0->f_vmflags));
 	
 	if (ptask0->f_stat || ptask0->ref) {
 		assert (ptask0->pool);

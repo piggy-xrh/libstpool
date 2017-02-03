@@ -176,7 +176,7 @@ cpool_com_cache_put(void * ins, ctask_t *ptask)
 {
 	cpool_core_t *core = CORE(ins);
 	
-	assert (ptask && ptask->f_vmflags & eTASK_VM_F_CACHE);
+	assert (ptask && ptask->f_vmflags & eTASK_VM_F_LOCAL_CACHE);
 	smcache_add(core->cache_task, ptask);
 }
 

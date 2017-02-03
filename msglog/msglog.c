@@ -12,6 +12,7 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <string.h>
+#include <time.h>
 
 #include "msglog.h"
 
@@ -81,14 +82,42 @@ static int ___log_filter_lentry[MAX_LOG_FILTER_ENTRY];
 static int ___log_entry_idx = 0;
 static enum eFilterType ___log_et = eFT_discard;
 
+#define snprintf_ejump(label, ptr, len, ...) \
+	do { \
+		int fmtlen; \
+		if ((len) <= 0 || 0 >= (fmtlen = snprintf((ptr), (len), ##__VA_ARGS__))) \
+			goto label; \
+		(ptr) += fmtlen; \
+		(len) -= fmtlen; \
+	} while (0)
+
+
 static inline const char *
 MSG_log_buffer2(char *buff, int bufflen, msg_log_brief_t *mlm, const char *omsg)
 {
+	time_t current;
+	struct tm *ptm;
+
 	if (!mlm->m)
 		mlm->m = " ***** ";
-
+	
+	/**
+	 * Insert the timestamp
+	 */
+	current = time(NULL);
+	ptm     = localtime(&current);
+	snprintf_ejump(RETURN, buff, bufflen,
+		"%s%04d-%02d-%02d %02d:%02d:%02d%s ",
+		___log_oattr[mlm->level].ldesc_start,
+		ptm->tm_year + 1900, ptm->tm_mon + 1, ptm->tm_mday,
+		ptm->tm_hour, ptm->tm_min, ptm->tm_sec,
+		___log_oattr[mlm->level].ldesc_end);
+	
+	/**
+	 * Try to color the message
+	 */
 	if (___log_color_enabled) 
-		snprintf(buff, bufflen, 
+		snprintf_ejump(RETURN, buff, bufflen, 
 			"%s%-9s%s  %s%s%s  %s%s%s", 
 			___log_oattr[mlm->level].ldesc_start,
 			mlm->m,
@@ -100,19 +129,20 @@ MSG_log_buffer2(char *buff, int bufflen, msg_log_brief_t *mlm, const char *omsg)
 			omsg, 
 			___log_oattr[mlm->level].textc_end);
 	else 
-		snprintf(buff, bufflen,
+		snprintf_ejump(RETURN, buff, bufflen,
 			"[%-9s]  [%s]  %s",
 			mlm->m,
 			___log_oattr[mlm->level].ldesc,
 			omsg);
-	
+
+RETURN:
 	return buff;
 }
 
 EXPORT const char *
 MSG_log_version()
 {
-	return "2015/09/15-1.2-libmsglog-mfilter";
+	return "2015/10/15-1.3-libmsglog-mfilter";
 }
 
 EXPORT void 
