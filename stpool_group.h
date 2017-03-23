@@ -7,6 +7,7 @@
  *    If you have any troubles or questions on using the library, contact me.
  *
  * 	  (Email: piggy_xrh@163.com  QQ: 1169732280)
+ *
  */
 
 #ifndef  __STPOOL_GROUP_H__

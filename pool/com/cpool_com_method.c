@@ -17,8 +17,7 @@ static inline cpool_core_t *CORE(void * ins)
 	/**
 	 * The first member of the context must be the address of the core object
 	 */
-	assert (sizeof(void *) == sizeof(long));
-	return (cpool_core_t *)*(long *)ins;
+	return *(cpool_core_t **)(ins);
 }
 
 void  

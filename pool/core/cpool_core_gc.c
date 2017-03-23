@@ -27,7 +27,7 @@ cpool_core_GC_run(basic_task_t *ptsk)
 {
 	thread_t *thread = ptsk->task_arg;
 	
-#if !defined(NDEBUG) && !defined(_WIN) && !defined(OS_T_OSX)
+#if !defined(NDEBUG) && defined(HAS_PRCTL)
 	prctl(PR_SET_NAME, ptsk->task_desc);
 #endif
 	if (thread->ncache_limit < 0) {

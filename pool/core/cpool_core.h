@@ -12,8 +12,9 @@
  * 	  (Email: piggy_xrh@163.com  QQ: 1169732280)
  */
 
-#if !defined(_WIN) && defined(HAS_PRCTL)
-#include <sys/prctl.h>
+#include "ospx_config.h"
+#ifdef HAS_PRCTL
+#include <sys/prctl.h> 
 #endif
 #include "msglog.h"
 #include "cpool_core_struct.h"

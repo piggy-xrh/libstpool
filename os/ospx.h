@@ -11,6 +11,7 @@
  * 	  (Email: piggy_xrh@163.com  QQ: 1169732280)
  */
 
+#include "ospx_config.h"
 #include "ospx_type.h"
 
 #if defined(_WIN32) || defined(WIN32) || defined(_WIN64)

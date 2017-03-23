@@ -633,131 +633,6 @@ stpool_create(const char *desc, long eCAPs, int maxthreads, int minthreads, int 
 	return pool;
 }
 
-#define snprintf_ejump(label, ptr, len, ...) \
-	do { \
-		int fmtlen; \
-		if ((len) <= 0 || 0 >= (fmtlen = snprintf((ptr), (len), ##__VA_ARGS__))) \
-			goto label; \
-		(ptr) += fmtlen; \
-		(len) -= fmtlen; \
-	} while (0)
-
-EXPORT const char *
-stpool_factory_list2(char *buffer, int bufferlen, long lflags)
-{
-	int  n = 0;
-	int  bfirst = 1;
-	char *ptr;
-	char stackb[1024 * 2];
-	char eCAPs_buffer[1024];
-	const char *fac_desc;
-	const cpool_factory_t *fac;
-
-	static char _stackbuffer[1024 * 8];
-	
-	if (!buffer) {
-		buffer = _stackbuffer;
-		bufferlen = sizeof(_stackbuffer);
-	}
-	ptr = buffer;
-	bzero(ptr, bufferlen);
-	
-
-	for (fac=first_factory(&fac_desc); fac; fac=next_factory(&fac_desc)) {
-		char *_ptr = stackb;
-		int  _len  = sizeof(stackb);
-		
-		if (n)
-			snprintf_ejump(ejump_return, _ptr, _len, "\n");
-
-		if (LIST_F_NAME & lflags) {
-			if (bfirst) 
-				snprintf_ejump(ejump_return, ptr, bufferlen, "factory\t\t");
-			
-			snprintf_ejump(ejump_skip, _ptr, _len, "%s\t", fac_desc);
-		}
-		
-		if ((LIST_F_CAPS_READABLE|LIST_F_CAPS) & lflags) {
-			if (bfirst)
-				snprintf_ejump(ejump_return, ptr, bufferlen, "capbilities\t");
-
-			if (LIST_F_CAPS_READABLE & lflags) 
-				snprintf_ejump(ejump_skip, _ptr, _len, "%s\t", __eCAPs_desc(__enum_CAPs(fac, 0), eCAPs_buffer));
-			
-			else if (LIST_F_CAPS & lflags) 
-				snprintf_ejump(ejump_skip, _ptr, _len, "0x%08lx\t", __enum_CAPs(fac, 0));
-		}
-
-		if (LIST_F_SCORES & lflags) {	
-			if (bfirst) 
-				snprintf_ejump(ejump_return, ptr, bufferlen, "scores\t");
-
-			snprintf_ejump(ejump_skip, _ptr, _len, "%d", fac->scores);
-		}
-	
-		if (bfirst && (LIST_F_ALL & lflags)) {
-			bfirst = 0;
-			snprintf_ejump(ejump_return, ptr, bufferlen, "\n\n");
-		}
-		
-		if (_len != sizeof (stackb)) {
-			++ n;
-			snprintf_ejump(ejump_return, ptr, bufferlen, "%s", stackb);
-		}
-	ejump_skip:
-		continue;
-	}
-
-ejump_return:
-	return buffer;
-}
-
-
-EXPORT stpool_t * 
-stpool_create_byfac(const char *fac, const char *desc, int maxthreads, int minthreads, int suspend, int pri_q_num)
-{
-	const char *fac_desc;
-	const cpool_factory_t *factory = NULL;
-	cpool_t *pool;
-	
-	if (!fac) {
-		MSG_log(M_POOL, LOG_ERR,
-			"fac can not be NULL\n");
-		
-		return NULL;
-	}
-
-	MSG_log(M_POOL, LOG_INFO,
-			"creating the pool(\"%s\") facory(%s) ...\n",
-			desc, fac);
-	
-	/**
-	 * Select the templates to create the pool 
-	 */
-	for (factory=first_factory(&fac_desc); factory; factory=next_factory(&fac_desc)) {
-		if (!strcmp(fac, fac_desc)) {
-			break;
-		}
-	}
-
-	if (!factory) {
-		MSG_log(M_POOL, LOG_WARN,
-			"Factory('%s') has not been registered !\n",
-			fac);
-
-		return NULL;
-	}
-	
-	if ((pool = factory->create(desc, maxthreads, minthreads, pri_q_num, suspend))) 
-		Invoke(atexit, pool, pm, __lib_regist_atexit, pool);
-	else
-		MSG_log2(M_POOL, LOG_ERR,
-			"Failed to create the pool: Factory(\"%s\"/%p).",
-			fac, factory);
-
-	return pool;
-}
-
 EXPORT long 
 stpool_caps(stpool_t *pool)
 {
@@ -1002,12 +877,10 @@ stpool_add_routine(stpool_t *pool,
 		return POOL_ERR_NOMEM;
 	
 	__stpool_task_INIT(ptask, name, task_run, task_err_handler, task_arg);
+	ptask->f_vmflags |= eTASK_VM_F_LOCAL_CACHE;
 	
 	if (attr)
 		stpool_task_setschattr(TASK_CAST_UP(ptask), attr);
-	
-	if (pool) 
-		ptask->f_vmflags |= eTASK_VM_F_LOCAL_CACHE;
 
 	/**
 	 * Pay the task object back to cache if we fail 

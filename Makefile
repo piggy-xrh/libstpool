@@ -1,3 +1,6 @@
+INSTALL_DIR=
+STRIP_LIB=yes
+
 .PHONY:all LIBS clean distclean install uninstall
 
 include complier.mk features.mk
@@ -98,10 +101,10 @@ distclean: clean
 
 install:LIBS
 	@if [ ! -z $(INSTALL_DIR) ]; then \
-		if [ ! -d $(INSTALL_DIR)/include ]; then mkdir -p $(INSTALL_DIR)/include || exit 1; fi; \
+		if [ ! -d $(INSTALL_DIR)/include/stpool ]; then mkdir -p $(INSTALL_DIR)/include/stpool || exit 1; fi; \
 		if [ ! -d $(INSTALL_DIR)/lib ]; then mkdir -p $(INSTALL_DIR)/lib || exit 1; fi; \
-		echo "cp stpool.h stpool_group.h stpool_caps.h msglog.h $(INSTALL_DIR)/include"; \
-		cp stpool.h stpool_group.h stpool_caps.h msglog.h $(INSTALL_DIR)/include; \
+		echo "cp stpool.h stpool_group.h stpool_caps.h msglog/msglog.h $(INSTALL_DIR)/include/stpool"; \
+		cp stpool.h stpool_group.h stpool_caps.h msglog/msglog.h $(INSTALL_DIR)/include/stpool; \
 		echo "cp libmsglog.a libmsglog.so libstpool.a libstpool.so $(INSTALL_DIR)/lib"; \
 		cp libmsglog.a libmsglog.so libstpool.a libstpool.so $(INSTALL_DIR)/lib; \
 	fi;

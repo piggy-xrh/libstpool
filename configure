@@ -20,6 +20,28 @@ function errExit()
 	exit 1
 }
 
+function beginConfig()
+{
+	cp .help/.ospx_config $VAR_config || exit 1 
+}
+
+function enableConfig()
+{
+	echo "" >>$VAR_config
+	echo "#define $1 1" >>$VAR_config
+}
+
+function endConfig()
+{
+	echo "" >>$VAR_config
+	echo "" >>$VAR_config
+	echo "#endif" >>$VAR_config
+}
+
+# reset the config
+VAR_config=os/ospx_config.h
+beginConfig 
+
 # set the default env
 VAR_cross=
 VAR_prefix=
@@ -121,7 +143,7 @@ _CODE_EOF
 ${VAR_cross}gcc .test.c -o .test 2>/dev/null
 if test $? -eq 0
 	then
-		VAR_cflags+=" -DHAS_STDINT_H"
+		enableConfig HAS_STDINT_H
 		echo " yes"
 	else
 		echo " no"
@@ -141,7 +163,7 @@ _CODE_EOF
 ${VAR_cross}gcc .test.c -o .test -lpthread 2>/dev/null
 if test $? -eq 0
 	then
-		VAR_cflags+=" -DHAS_PTHREAD_RWLOCK"
+		enableConfig HAS_PTHREAD_RWLOCK
 		echo " yes"
 	else
 		echo " no"
@@ -161,7 +183,7 @@ _CODE_EOF
 ${VAR_cross}gcc .test.c -o .test -lrt 2>/dev/null 
 if test $? -eq 0
 	then
-		VAR_cflags+=" -DHAS_CLOCK_GETTIME"
+		enableConfig HAS_CLOCK_GETTIME
 		echo " yes"
 	else
 		echo  " no"
@@ -181,7 +203,7 @@ _CODE_EOF
 ${VAR_cross}gcc .test.c -o .test -lrt 2>/dev/null
 if test $? -eq 0
 	then
-		VAR_cflags+=" -DHAS_CLOCK_MONOTONIC"
+		enableConfig HAS_CLOCK_MONOTONIC
 		echo " yes"
 	else
 		echo " no"
@@ -205,7 +227,7 @@ _CODE_EOF
 ${VAR_cross}gcc .test.c -o .test -lrt -lpthread 2>/dev/null
 if test $? -eq 0
 	then
-		VAR_cflags+=" -DHAS_PTHREAD_CONDATTR_SETCLOCK"
+		enableConfig HAS_PTHREAD_CONDATTR_SETCLOCK
 		echo " yes"
 	else
 		echo " no"
@@ -225,7 +247,7 @@ _CODE_EOF
 ${VAR_cross}gcc .test.c -o .test -lpthread 2>/dev/null 
 if test $? -eq 0
 	then
-		VAR_cflags+=" -DHAS_PTHREAD_ATTR_GETINHERITSCHED"
+		enableConfig HAS_PTHREAD_ATTR_GETINHERITSCHED
 		echo " yes"
 	else
 		echo " no"
@@ -245,7 +267,7 @@ _CODE_EOF
 ${VAR_cross}gcc .test.c -o .test -lpthread 2>/dev/null
 if test $? -eq 0
 	then
-		VAR_cflags+=" -DHAS_SEM_TIMEDWAIT"
+		enableConfig HAS_SEM_TIMEDWAIT
 		echo " yes"
 	else
 		echo " no"
@@ -265,7 +287,7 @@ _CODE_EOF
 ${VAR_cross}gcc .test.c -o .test 2>/dev/null 
 if test $? -eq 0
 	then
-		VAR_cflags+=" -DHAS_PRCTL"
+		enableConfig HAS_PRCTL
 		echo " yes"
 	else
 		echo " no"
@@ -289,8 +311,9 @@ _MK_EOF
 echo "CFLAGS+=$VAR_cflags" >features.mk || errExit
 echo -e "INSTALL_DIR=$VAR_prefix" >Makefile
 echo -e "STRIP_LIB=$VAR_strip\n" >>Makefile
-cat .Makefile >> Makefile || errExit
+cat .help/.Makefile >> Makefile || errExit
 echo "generate Makefile succefully."
 
 # remove all temp files
 cacheClean
+endConfig

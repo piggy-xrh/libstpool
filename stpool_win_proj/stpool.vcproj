@@ -44,7 +44,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories="..;../pool;../pool/core;../pool/com;../pool/rt;../pool/gp"
+				AdditionalIncludeDirectories="..;../pool;../pool/core;../pool/com;../pool/rt;../pool/gp;../msglog;../os;../factory"
 				PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_WARNINGS;CONFIG_TASK_ROUTINE_MP;CONFIG_LOG_COLOR_OFF;CONFIG_STATICS_REPORT"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
@@ -108,7 +108,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories="..;../pool;../pool/core;../pool/com;../pool/rt;../pool/gp"
+				AdditionalIncludeDirectories="..;../pool;../pool/core;../pool/com;../pool/rt;../pool/gp;../os;../factory;../msglog"
 				PreprocessorDefinitions="_WIN64;_DEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_WARNINGS;CONFIG_TASK_ROUTINE_MP;CONFIG_LOG_COLOR_OFF;CONFIG_STATICS_REPORT"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
@@ -174,7 +174,7 @@
 				Optimization="2"
 				EnableIntrinsicFunctions="true"
 				FavorSizeOrSpeed="1"
-				AdditionalIncludeDirectories="..;../pool;../pool/core;../pool/com;../pool/rt;../pool/gp"
+				AdditionalIncludeDirectories="..;../pool;../pool/core;../pool/com;../pool/rt;../pool/gp;../os;../factory;../msglog"
 				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_WARNINGS;CONFIG_TASK_ROUTINE_MP;CONFIG_LOG_COLOR_OFF;CONFIG_STATICS_REPORT"
 				RuntimeLibrary="0"
 				EnableFunctionLevelLinking="true"
@@ -240,7 +240,7 @@
 				Optimization="2"
 				EnableIntrinsicFunctions="true"
 				FavorSizeOrSpeed="1"
-				AdditionalIncludeDirectories="..;../pool;../pool/core;../pool/com;../pool/rt;../pool/gp"
+				AdditionalIncludeDirectories="..;../pool;../pool/core;../pool/com;../pool/rt;../pool/gp;../os;../msglog;../factory"
 				PreprocessorDefinitions="_WIN64;NDEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_WARNINGS;CONFIG_TASK_ROUTINE_MP;CONFIG_LOG_COLOR_OFF;CONFIG_STATICS_REPORT"
 				RuntimeLibrary="0"
 				EnableFunctionLevelLinking="true"
@@ -286,138 +286,6 @@
 			Filter="cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx"
 			UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
 			>
-		</Filter>
-		<Filter
-			Name="Header Files"
-			Filter="h;hpp;hxx;hm;inl;inc;xsd"
-			UniqueIdentifier="{93995380-89BD-4b04-88EB-625FBE52EBFB}"
-			>
-			<File
-				RelativePath="..\pool\core\cache_creater.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\com\cpool_com_internal.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\com\cpool_com_method.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\com\cpool_com_priq.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\core\cpool_core.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\core\cpool_core_gc.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\core\cpool_core_struct.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\core\cpool_core_thread_status.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\cpool_factory.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\gp\cpool_gp_entry.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\gp\cpool_gp_factory.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\gp\cpool_gp_internal.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\gp\cpool_gp_method.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\gp\cpool_gp_struct.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\gp\cpool_gp_wait.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\gp\cpool_gp_wait_internal.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\cpool_method.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\rt\cpool_rt_factory.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\rt\cpool_rt_internal.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\rt\cpool_rt_method.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\core\ospx_compatible.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\core\ospx_errno.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\core\ospx_error.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\core\ospx_type.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\core\sm_cache.h"
-				>
-			</File>
-			<File
-				RelativePath="..\stpool.h"
-				>
-			</File>
-			<File
-				RelativePath="..\stpool_caps.h"
-				>
-			</File>
-			<File
-				RelativePath="..\stpool_group.h"
-				>
-			</File>
-			<File
-				RelativePath="..\stpool_internal.h"
-				>
-			</File>
-			<File
-				RelativePath="..\pool\core\timer.h"
-				>
-			</File>
-		</Filter>
-		<Filter
-			Name="Resource Files"
-			Filter="rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav"
-			UniqueIdentifier="{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}"
-			>
 			<File
 				RelativePath="..\pool\com\cpool_com_method.c"
 				>
@@ -431,7 +299,7 @@
 				>
 			</File>
 			<File
-				RelativePath="..\pool\cpool_factory.c"
+				RelativePath="..\factory\cpool_factory.c"
 				>
 			</File>
 			<File
@@ -483,7 +351,7 @@
 				>
 			</File>
 			<File
-				RelativePath="..\pool\cpool_wait.c"
+				RelativePath="..\pool\com\cpool_wait.c"
 				>
 			</File>
 			<File
@@ -491,11 +359,11 @@
 				>
 			</File>
 			<File
-				RelativePath="..\pool\core\ospx.c"
+				RelativePath="..\os\ospx.c"
 				>
 			</File>
 			<File
-				RelativePath="..\pool\core\ospx_error.c"
+				RelativePath="..\os\ospx_error.c"
 				>
 			</File>
 			<File
@@ -512,6 +380,80 @@
 			</File>
 			<File
 				RelativePath="..\pool\core\timer.c"
+				>
+			</File>
+		</Filter>
+		<Filter
+			Name="Header Files"
+			Filter="h;hpp;hxx;hm;inl;inc;xsd"
+			UniqueIdentifier="{93995380-89BD-4b04-88EB-625FBE52EBFB}"
+			>
+			<File
+				RelativePath="..\pool\core\cache_creater.h"
+				>
+			</File>
+			<File
+				RelativePath="..\pool\core\cpool_core.h"
+				>
+			</File>
+			<File
+				RelativePath="..\pool\core\cpool_core_gc.h"
+				>
+			</File>
+			<File
+				RelativePath="..\pool\core\cpool_core_struct.h"
+				>
+			</File>
+			<File
+				RelativePath="..\pool\core\cpool_core_thread_status.h"
+				>
+			</File>
+			<File
+				RelativePath="..\factory\cpool_factory.h"
+				>
+			</File>
+			<File
+				RelativePath="..\factory\cpool_method.h"
+				>
+			</File>
+			<File
+				RelativePath="..\pool\core\list.h"
+				>
+			</File>
+			<File
+				RelativePath="..\pool\core\objpool.h"
+				>
+			</File>
+			<File
+				RelativePath="..\os\ospx.h"
+				>
+			</File>
+			<File
+				RelativePath="..\os\ospx_compatible.h"
+				>
+			</File>
+			<File
+				RelativePath="..\os\ospx_config.h"
+				>
+			</File>
+			<File
+				RelativePath="..\os\ospx_errno.h"
+				>
+			</File>
+			<File
+				RelativePath="..\os\ospx_error.h"
+				>
+			</File>
+			<File
+				RelativePath="..\os\ospx_type.h"
+				>
+			</File>
+			<File
+				RelativePath="..\pool\core\sm_cache.h"
+				>
+			</File>
+			<File
+				RelativePath="..\pool\core\timer.h"
 				>
 			</File>
 		</Filter>

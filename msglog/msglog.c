@@ -17,11 +17,14 @@
 #include "msglog.h"
 
 #ifdef _WIN  
+#include <windows.h>
 #define inline __inline  
 // MSVC++ 14.0 (Visual Studio 2015) 
 #if(_MSC_VER < 1900) 
 #define snprintf _snprintf
 #endif 
+#else
+#include <pthread.h>
 #endif
 
 #define C_NONE    "\033[m"   
@@ -100,25 +103,37 @@ MSG_log_buffer2(char *buff, int bufflen, msg_log_brief_t *mlm, const char *omsg)
 
 	if (!mlm->m)
 		mlm->m = " ***** ";
-	
+
+#ifndef _WIN
+#define get_id()  (unsigned)pthread_self()
+#else
+#define get_id()  (unsigned)GetCurrentThreadId()
+#endif
+
+
 	/**
 	 * Insert the timestamp
 	 */
 	current = time(NULL);
 	ptm     = localtime(&current);
-	snprintf_ejump(RETURN, buff, bufflen,
-		"%s%04d-%02d-%02d %02d:%02d:%02d%s ",
-		___log_oattr[mlm->level].ldesc_start,
-		ptm->tm_year + 1900, ptm->tm_mon + 1, ptm->tm_mday,
-		ptm->tm_hour, ptm->tm_min, ptm->tm_sec,
-		___log_oattr[mlm->level].ldesc_end);
-	
+	if (___log_color_enabled)
+		snprintf_ejump(RETURN, buff, bufflen,
+			"%s%04d-%02d-%02d %02d:%02d:%02d%s ",
+			___log_oattr[mlm->level].ldesc_start,
+			ptm->tm_year + 1900, ptm->tm_mon + 1, ptm->tm_mday,
+			ptm->tm_hour, ptm->tm_min, ptm->tm_sec,
+			___log_oattr[mlm->level].ldesc_end);
+	else
+		snprintf_ejump(RETURN, buff, bufflen,
+			"%04d-%02d-%02d %02d:%02d:%02d ",
+			ptm->tm_year + 1900, ptm->tm_mon + 1, ptm->tm_mday,
+			ptm->tm_hour, ptm->tm_min, ptm->tm_sec);
 	/**
 	 * Try to color the message
 	 */
 	if (___log_color_enabled) 
 		snprintf_ejump(RETURN, buff, bufflen, 
-			"%s%-9s%s  %s%s%s  %s%s%s", 
+			"%s%-9s%s  %s%s%s  %s%0x|%s%s", 
 			___log_oattr[mlm->level].ldesc_start,
 			mlm->m,
 			___log_oattr[mlm->level].ldesc_end,
@@ -126,13 +141,15 @@ MSG_log_buffer2(char *buff, int bufflen, msg_log_brief_t *mlm, const char *omsg)
 			___log_oattr[mlm->level].ldesc,
 			___log_oattr[mlm->level].ldesc_end,
 			___log_oattr[mlm->level].textc_start, 
+			get_id(),
 			omsg, 
 			___log_oattr[mlm->level].textc_end);
 	else 
 		snprintf_ejump(RETURN, buff, bufflen,
-			"[%-9s]  [%s]  %s",
+			"[%-9s]  [%s]  %0x|%s",
 			mlm->m,
 			___log_oattr[mlm->level].ldesc,
+			get_id(), 
 			omsg);
 
 RETURN:

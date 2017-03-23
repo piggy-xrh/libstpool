@@ -344,6 +344,7 @@ stpool_group_add_routine(stpool_t *pool, int gid, const char *name,
 	
 	__stpool_task_INIT(ptask, name, task_run, task_err_handler, task_ar);
 	ptask->gid = gid;
+	ptask->f_vmflags |= eTASK_VM_F_LOCAL_CACHE;
 	
 	if (attr)
 		stpool_task_setschattr(TASK_CAST_UP(ptask), attr);
