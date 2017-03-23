@@ -6,7 +6,7 @@ include $(CLEAR_VARS)
 
 include $(LOCAL_PATH)/../features.mk
 
-CFLAGS += -I. -Ipool -Ipool/core -Ipool/com -Ipool/rt -Ipool/gp
+CFLAGS += -I. -Imsglog -Ios -Ifactory -Ipool -Ipool/core -Ipool/com -Ipool/rt -Ipool/gp
 
 #libmsglog
 LOCAL_MODULE := libmsglog
