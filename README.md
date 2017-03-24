@@ -16,12 +16,12 @@ libstpool是一个开源的轻便的跨平台的动态c/c++线程池，任务池
 .编译安装
 ----
 >Linux/MAC
-  * ./configure --prefix=/usr/lib
+  * ./configure --prefix=/usr/
   * make -j2 && make install
 
 >windows
   * 使用vs打开stpool_win_proj/stpool.sln
-  * 编译msglog工程
+  * 编译libmsglog工程
   * 编译libstpool工程
   * 最后编译测试demo
 
