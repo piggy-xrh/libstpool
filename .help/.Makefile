@@ -35,31 +35,31 @@ libmsglog.a:$(addprefix $(OBJS_DIR)/, $(OBJS_msglog))
 	$(AR) $(ARFLAGS) $@ $^ 
 	chmod +x $@
 ifeq ($(STRIP_LIB), yes)
-	$(STRIP) $(STRIPFLAGS) $@
+	$(STRIP) $(STRIPFLAGS) $@ 2>/dev/null
 endif
 
 libmsglog.so:$(addprefix $(OBJS_DIR)/, $(OBJS_msglog)) 
 	$(CC) --shared -o  $@ $^
 	chmod +x $@
 ifeq ($(STRIP_LIB), yes)
-	$(STRIP) $(STRIPFLAGS) $@
+	$(STRIP) $(STRIPFLAGS) $@ 2>/dev/null
 endif
 
-libstpool.a:$(addprefix $(OBJS_DIR)/, $(OBJS_stpool)) libmsglog.a
+libstpool.a:$(addprefix $(OBJS_DIR)/, $(OBJS_stpool)) 
 	$(AR) $(ARFLAGS) $@ $(filter-out ligmsglog.a, $^)
 	chmod +x $@
 ifeq ($(STRIP_LIB), yes)
-	$(STRIP) $(STRIPFLAGS) $@
+	$(STRIP) $(STRIPFLAGS) $@ 2>/dev/null
 endif
 
-libstpool.so:$(addprefix $(OBJS_DIR)/, $(OBJS_stpool)) libmsglog.so
+libstpool.so:$(addprefix $(OBJS_DIR)/, $(OBJS_stpool)) 
 	$(CC) --shared -o  $@ $^ 
 	chmod +x $@
 ifeq ($(STRIP_LIB), yes)
-	$(STRIP) $(STRIPFLAGS) $@
+	$(STRIP) $(STRIPFLAGS) $@ 2>/dev/null
 endif
 
-EXAMPLE := $(addprefix examples/, demo demo-pri demo-sche demo-group)
+EXAMPLE := $(addprefix examples/, demo demo-pri demo-sche demo-group demo-overload)
 
 demos: $(EXAMPLE)
 
@@ -78,6 +78,9 @@ endif
 	$(CC) $^ $(LDFLAGS) -o $@ 
 
 %demo-group:$(OBJS_DIR)/demo-group.o libstpool.a libmsglog.a
+	$(CC) $^ $(LDFLAGS) -o $@ 
+
+%demo-overload:$(OBJS_DIR)/demo-overload.o libstpool.a libmsglog.a
 	$(CC) $^ $(LDFLAGS) -o $@ 
 
 
@@ -108,16 +111,22 @@ install:LIBS
 
 uninstall:
 	@if [ -d $(INSTALL_DIR) ]; then \
-		if [ -d $(INSTALL_DIR)/include ]; then \
-			echo "cd $(INSTALL_DIR)/include && rm stpool.h stpool_group.h stpool_caps.h msglog.h"; \
-			cd $(INSTALL_DIR)/include && rm -fr stpool.h stpool_group.h stpool_caps.h msglog.h 2>/dev/null; \
-			cd .. && rm -d include; \
-			cd ..; \
+		if [ -d $(INSTALL_DIR)/include/stpool ]; then \
+			echo "cd $(INSTALL_DIR)/include/stpool && rm stpool.h stpool_group.h stpool_caps.h msglog.h"; \
+			cd $(INSTALL_DIR)/include/stpool; \
+			if [ $$? -eq 0 ]; then \
+				rm -fr stpool.h stpool_group.h stpool_caps.h msglog.h 2>/dev/null; \
+				cd .. && rm -d stpool 2>/dev/null && cd .. && rm -d include 2>/dev/null; \
+			fi\
 		fi; \
 		if [ -d $(INSTALL_DIR)/lib ]; then \
 			echo "cd $(INSTALL_DIR)/lib && rm libmsglog.a libmsglog.so libstpool.a libstpool.so"; \
-			cd $(INSTALL_DIR)/lib && `rm -fr libmsglog.a libmsglog.so libstpool.a libstpool.so 2>/dev/null`; \
-			cd .. && rm -d lib && cd ..; \
+			cd $(INSTALL_DIR)/lib; \
+			if [ $$? -eq 0 ]; then \
+				rm -fr libmsglog.a libmsglog.so libstpool.a libstpool.so 2>/dev/null; \
+				cd .. && rm -d lib 2>/dev/null;\
+			fi\
 		fi;\
 		rm -d $(INSTALL_DIR) 2>/dev/null; \
+		exit 0; \
 	fi;
