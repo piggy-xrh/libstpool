@@ -20,9 +20,9 @@ __cpool_com_get_dispatch_taskl(cpool_core_t *core, thread_t *self, int n)
 	struct list_head *entry;
 
 	assert (core->n_qdispatchs > 0 && n >= 1);
-
+	
 	if (core->n_qdispatchs <= n) {
-		__list_splice(&core->dispatch_q, &self->dispatch_q, self->dispatch_q.next);
+		list_splice_init(&core->dispatch_q, &self->dispatch_q);
 		core->n_qdispatchs = 0;
 	
 	} else {
@@ -37,7 +37,6 @@ __cpool_com_get_dispatch_taskl(cpool_core_t *core, thread_t *self, int n)
 			"Thread(%d) is selected to schedue the dispatch queue ...\n",
 			self);
 #endif
-	
 	return 1;
 }
 
@@ -49,7 +48,7 @@ __cpool_com_get_dispatch_taskl2(cpool_core_t *core, thread_t *self, int n)
 	assert (core->n_qdispatchs > 0 && n>=1);
 
 	if (core->n_qdispatchs <= n) {
-		__list_splice(&core->dispatch_q, &self->dispatch_q, self->dispatch_q.next);
+		list_splice_init(&core->dispatch_q, &self->dispatch_q);
 		core->n_qdispatchs = 0;
 	
 	} else {
@@ -80,7 +79,7 @@ __cpool_com_get_dispatch_taskl3(cpool_core_t *core, thread_t *self, int n)
 	assert (core->n_qdispatchs > 0 && n>=1);
 
 	if (core->n_qdispatchs <= n) {
-		__list_splice(&core->dispatch_q, &self->dispatch_q, self->dispatch_q.next);
+		list_splice_init(&core->dispatch_q, &self->dispatch_q);
 		n = core->n_qdispatchs;
 		core->n_qdispatchs = 0;
 

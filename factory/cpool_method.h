@@ -18,6 +18,7 @@ typedef struct cpool cpool_t;
 
 struct scheduler_attr;
 struct thread_attr;
+struct cpool_oaattr;
 struct scheduling_attr;
 struct ctask_group_stat;
 
@@ -50,8 +51,10 @@ typedef struct cpool_basic_method {
 	long  (*release)            (void * ins);
 	void  (*setattr)            (void * ins, struct thread_attr *attr);
 	void  (*getattr)            (void * ins, struct thread_attr *attr);
-	void  (*set_schedulingattr)  (void * ins, struct scheduling_attr *attr); 
-	void  (*get_schedulingattr)  (void * ins, struct scheduling_attr *attr); 
+	void  (*set_schedulingattr) (void * ins, struct scheduling_attr *attr); 
+	void  (*get_schedulingattr) (void * ins, struct scheduling_attr *attr); 
+	void  (*set_oaattr)         (void * ins, struct cpool_oaattr *attr);
+	void  (*get_oaattr)         (void * ins, struct cpool_oaattr *attr);
 	void  (*set_activetimeo)    (void * ins, long acttimeo, long randtimeo);
 	void  (*adjust)             (void * ins, int max, int min);
 	void  (*adjust_abs)         (void * ins, int max, int min);
@@ -82,6 +85,8 @@ typedef struct cpool_advance_method {
 	void  (*group_resume_all)      (void * ins);
 	int   (*group_setattr)         (void * ins, int gid, struct scheduler_attr *attr);
 	int   (*group_getattr)         (void * ins, int gid, struct scheduler_attr *attr);
+	int   (*group_set_oaattr)      (void * ins, int gid, struct cpool_oaattr *attr);
+	int   (*group_get_oaattr)      (void * ins, int gid, struct cpool_oaattr *attr);
 	void  (*group_throttle_enable) (void * ins, int gid, int enable);
 	int   (*group_throttle_wait)   (void * ins, int gid, long ms);
 	int   (*group_remove_all)      (void * ins, int gid, int dispatched_by_pool);

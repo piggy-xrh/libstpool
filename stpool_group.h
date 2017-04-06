@@ -18,7 +18,8 @@
 /**
  * The scheduling attribute of the group.
  */
-struct gscheduler_attr {
+struct gscheduler_attr 
+{
 	/**
 	 * The limit parralle tasks. 
 	 *
@@ -112,7 +113,8 @@ struct gscheduler_attr {
 /**
  * The status of the group.
  */
-struct sttask_group_stat {
+struct sttask_group_stat 
+{
 	/** 
 	 * The group id returned by @ref stpool_group_create
 	 */
@@ -388,6 +390,28 @@ EXPORT void stpool_group_resume(stpool_t *pool, int gid);
  * Call @ref stpool_group_resume (pool, gid) on every group existing in the pool
  */
 EXPORT void stpool_group_resume_all(stpool_t *pool);
+
+/**
+ * Set the overload policy for the group
+ * 
+ * @param [in]  pool the pool object
+ * @param [in]  gid  the group id 
+ * @param [out] attr the overload policy that the user wants to apply
+ *
+ * @return 
+ */
+EXPORT int stpool_group_set_overload_attr(stpool_t *pool, int gid, struct oaattr *attr);
+
+/**
+ * Get the overload policy of the group
+ * 
+ * @param [in]  pool the pool object
+ * @param [in]  gid  the group id 
+ * @param [out] attr the current overload policy
+ *
+ * @return \@attr
+ */
+EXPORT struct oaattr *stpool_group_get_overload_attr(stpool_t *pool, int gid, struct oaattr *attr);
 
 /**
  * Get the status of the group

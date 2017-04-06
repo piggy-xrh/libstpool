@@ -44,7 +44,7 @@ beginConfig
 
 # set the default env
 VAR_cross=
-VAR_prefix=
+VAR_prefix=/usr/local
 VAR_libmode=Release
 VAR_strip=yes
 VAR_cflags=
@@ -63,6 +63,9 @@ while [ -n "$1" ]; do
 
 	--prefix)
 		VAR_prefix=$2;
+		if [[ "${VAR_prefix:0:1}" != "/" ]]; then
+			VAR_prefix=$PWD/$VAR_prefix
+		fi
 		shift  
 		;;
 	

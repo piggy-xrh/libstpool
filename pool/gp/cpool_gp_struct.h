@@ -234,6 +234,12 @@ struct ctask_entry
 	OSPX_pthread_cond_t *cond_task;
 	OSPX_pthread_cond_t *cond_ev;
 	OSPX_pthread_cond_t *cond_sync;
+	
+	/**
+	 * Overload policy
+	 */
+	 int task_threshold;
+	 int eoa;
 };
 
 struct cpool_gp {

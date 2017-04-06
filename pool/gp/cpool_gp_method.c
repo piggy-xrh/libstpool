@@ -96,6 +96,7 @@ cpool_gp_free_instance(cpool_gp_t *gpool)
 int   
 cpool_gp_task_queue(void * ins, ctask_t *ptask)
 {
+	int drain = 0;
 	int e = 0, gid = ptask->gid;
 	cpool_gp_t *gpool = ins;
 	ctask_entry_t *entry;
@@ -157,19 +158,40 @@ cpool_gp_task_queue(void * ins, ctask_t *ptask)
 			return eERR_GROUP_NOT_FOUND;
 		return eERR_GROUP_THROTTLE;
 	}
-			
-	if (likely(!ptask->f_stat)) {
-		++ gpool->n_qtraces;
-		++ entry->n_qtraces;
-		list_add_tail(&TASK_CAST_TRACE(ptask)->trace_link, entry->trace_q);
-		
+	
+	if (unlikely(ptask->f_stat)) {
+		assert (ptask->f_stat & (eTASK_STAT_F_DISPATCHING|eTASK_STAT_F_SCHEDULING));
+		ptask->f_stat |= eTASK_STAT_F_WPENDING;
+		OSPX_pthread_mutex_unlock(&gpool->core->mut);
+		return 0;
+	}
+	/**
+	 * Check the overload status
+	 */
+	if (entry->eoa != eIFOA_none && entry->task_threshold > 0 &&
+		entry->npendings > entry->task_threshold) {
+		switch (entry->eoa) {
+		case eIFOA_discard:
+			OSPX_pthread_mutex_unlock(&gpool->core->mut);
+			return eERR_GROUP_OVERLOADED;
+
+		case eIFOA_drain:
+			drain = 1;
+			break;
+		}
+	}
+	 
+	++ gpool->n_qtraces;
+	++ entry->n_qtraces;
+	list_add_tail(&TASK_CAST_TRACE(ptask)->trace_link, entry->trace_q);
+	
+	if (drain) {
+		__cpool_gp_task_pop_and_insertl(gpool, entry, TASK_CAST_TRACE(ptask));
+	} else {
 		__cpool_gp_task_pri_queuel(gpool, entry, TASK_CAST_TRACE(ptask));
 		if (likely(!entry->paused))
 			__cpool_gp_entry_consumer_notifyl(gpool, entry);
-	} else {
-		assert (ptask->f_stat & (eTASK_STAT_F_DISPATCHING|eTASK_STAT_F_SCHEDULING));
-		ptask->f_stat |= eTASK_STAT_F_WPENDING;
-	}
+	} 
 	OSPX_pthread_mutex_unlock(&gpool->core->mut);
 	
 	return 0;

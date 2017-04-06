@@ -50,6 +50,8 @@ __cpool_rt_method_init()
 			 cpool_com_getattr,
 			 cpool_com_set_schedulingattr,
 			 cpool_com_get_schedulingattr,
+			 cpool_rt_set_oaattr,
+			 cpool_rt_get_oaattr,
 			 cpool_com_set_activetimeo,
 			 cpool_com_adjust,
 			 cpool_com_adjust_abs,

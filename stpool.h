@@ -27,7 +27,8 @@
 typedef struct cpool stpool_t;
 
 /** Error code sets */
-enum {	
+enum 
+{	
 	/**
 	 * System is out of memeory 
 	 */
@@ -90,6 +91,11 @@ enum {
 	 * The group is being destroyed
 	 */
 	POOL_ERR_GROUP_DESTROYING = 12,
+	
+	/**
+	 * The group is overloaded
+	 */
+	POOL_ERR_GROUP_OVERLOADED = 19,
 	/*----------------------------------------------------------------*/
 
 	/**
@@ -123,29 +129,47 @@ enum {
 	 * (The errno has been set properly)
 	 */
 	POOL_ERR_errno  = 17,
+	
+	/**
+	 * The task can not be delived into the pool since the pool
+	 * is overloaded now
+	 */
+	POOL_ERR_OVERLOADED = 18,
 };
 
 /** Task error reasons */
-enum {
+enum 
+{
 	/**
-	 * The task is removed by user
+	 * The task is removed from the pool for some reasons
 	 */
 	eReason_removed = 0x01,
 	
 	/**
-	 * The task is removed by the library since the pool has been marked 
-	 * suspended and it is being destroyed
+	 * The task can not been executed since the pool has been marked 
+	 * suspended and the pool itself is being destroyed
 	 */
 	eReason_pool_destroying = 0x02,
 
 	/**
-	 * The task is removed by the library since The group is being destroyed
+	 * The task can not been executed since the group is being destroyed
 	 */
 	eReason_group_destroying = 0x04,
+	
+	/**
+	 * The task can not been executed because of the pool's overload
+	 */
+	eReason_pool_overloaded = 0x08,
+	
+	/**
+	 * The task can not been executed because of the group's overload
+	 */
+	eReason_group_overloaded = 0x10
 };
 
 /** The definition of the task object */
-struct sttask {
+struct sttask 
+{
 	/**
 	 * A const string to describle the task 
 	 */
@@ -185,7 +209,8 @@ struct sttask {
 };
 
 /** The policy to schedule the taskA */
-enum {
+enum 
+{
 	/**
 	 * If there are tasks who has the same priority with taskA, 
 	 * the taskA will be scheduled prior to all of them 
@@ -200,7 +225,8 @@ enum {
 };
 
 /** The scheduling attributes of the task object */
-struct schattr {
+struct schattr 
+{
 	/**
 	 * If \@permanent is not zero, the task's priority will not
 	 * be changed until the user call @ref stpool_task_setschattr
@@ -221,7 +247,8 @@ struct schattr {
 };
 
 /** The status of the task object */
-enum {
+enum 
+{
 	/**
 	 * Task is in the pending queue
 	 */
@@ -250,7 +277,8 @@ enum {
  * be stored in the task object. and user can get the tasks' VM flags
  * by @ref stpool_task_vm
  */
-enum {
+enum 
+{
 	/**
 	 * Remove the task and the pool is responsible for calling its
 	 * error handler in the background if it is not NULL.
@@ -319,7 +347,8 @@ enum ep_SCHE
 };
 
 /** Attribute of servering thread */
-struct stpool_thattr {
+struct stpool_thattr 
+{
 	/**
 	 * Stack size (0:default) 
 	 */
@@ -337,7 +366,8 @@ struct stpool_thattr {
 };
 
 /** Scheduling attributes of the thread */
-struct stpool_taskattr {
+struct stpool_taskattr 
+{
 	/**
 	 * The max scheduling tasks of the thread's local queue
 	 */
@@ -349,8 +379,44 @@ struct stpool_taskattr {
 	int max_qdispatching;
 };
 
+/** The overload actions */
+enum
+{
+  /**
+   * The newer task will be delived into the pending queue (default policy)
+   */
+  eOA_none,
+
+  /**
+   * The newer task can not be delived into the pool
+   */
+  eOA_discard,
+
+  /**
+   * The newer task will be delived into the pending queue, and menwhile the
+   * the oldest tasks existing in the pending queue will be removed
+   */
+  eOA_drain
+};
+
+/** The overload policies */
+struct oaattr
+{
+	/**
+	 * The threshold of the task 
+	 */
+	int task_threshold;
+	
+	/** 
+	 * The action that the library should execute when the task number arrives
+	 * at the threshold
+	 */
+	int eoa;
+};
+
 /** Status of the pool */
-struct pool_stat {
+struct pool_stat 
+{
 	/**
 	 * A const string to describle the pool 
 	 */
@@ -1123,6 +1189,27 @@ EXPORT void stpool_adjust(stpool_t *pool, int maxthreads, int minthreads);
  * @return The number of threads who is marked died by it
  */
 EXPORT int  stpool_flush(stpool_t *pool);
+
+/**
+ * Set the overload policy for the pool
+ * 
+ * @param [in]  pool the pool object
+ * @param [out] attr the overload policy that the user wants to apply
+ *
+ * @return None
+ */
+
+EXPORT void stpool_set_overload_attr(stpool_t *pool, struct oaattr *attr);
+
+/**
+ * Get the overload policy of the pool
+ * 
+ * @param [in]  pool the pool object
+ * @param [out] attr the current overload policy
+ *
+ * @return \@attr
+ */
+EXPORT struct oaattr *stpool_get_overload_attr(stpool_t *pool, struct oaattr *attr);
 
 /**
  * Get the status of the pool

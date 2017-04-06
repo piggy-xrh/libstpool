@@ -236,8 +236,8 @@ stpool_group_setattr(stpool_t *pool, int gid, struct gscheduler_attr *attr)
 	Invoke(group_setattr, pool, pmex, gid, &attr0);
 }
 
-EXPORT struct scheduler_attr *
-stpool_group_etattr(stpool_t *pool, int gid, struct scheduler_attr *attr)
+EXPORT struct gscheduler_attr *
+stpool_group_getattr(stpool_t *pool, int gid, struct gscheduler_attr *attr)
 {
 	struct scheduler_attr attr0;
 	
@@ -315,6 +315,40 @@ stpool_group_resume_all(stpool_t *pool)
 		stpool_resume(pool);
 	else 
 		TRY_Invoke(group_resume_all, pool, pmex);
+}
+
+EXPORT int
+stpool_group_set_overload_attr(stpool_t *pool, int gid, struct oaattr *attr)
+{
+	int res = 0;
+	assert (sizeof(struct oaattr) == sizeof(struct cpool_oaattr));
+
+	if (!gid && !Invokable(group_create, pool, pmex)) {	
+		if (!Invokable(set_oaattr, pool, pm))
+			res = POOL_ERR_NSUPPORT;
+		else
+			Invoke(set_oaattr, pool, pm, (struct cpool_oaattr *)attr);
+	} else
+		TRY_Invoke_err(res, group_set_oaattr, pool, pmex, gid, (struct cpool_oaattr *)attr);
+	
+	return res;
+}
+
+EXPORT struct oaattr *
+stpool_group_get_overload_attr(stpool_t *pool, int gid, struct oaattr *attr)
+{
+	int res = 0;
+	assert (sizeof(struct oaattr) == sizeof(struct cpool_oaattr));
+	
+	if (!gid && !Invokable(group_create, pool, pmex)) {
+		if (!Invokable(get_oaattr, pool, pm))
+			res = POOL_ERR_NSUPPORT;
+		else
+			Invoke(get_oaattr, pool, pm, (struct cpool_oaattr *)attr);
+	} else
+		TRY_Invoke_err(res, group_get_oaattr, pool, pmex, gid, (struct cpool_oaattr *)attr);
+	
+	return res ? NULL : attr;
 }
 
 EXPORT int  

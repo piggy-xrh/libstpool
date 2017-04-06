@@ -58,6 +58,8 @@ void  cpool_gp_entry_resume(void *ins, int gid);
 void  cpool_gp_entry_resume_all(void *ins);
 int   cpool_gp_entry_setattr(void *ins, int gid, struct scheduler_attr *attr);
 int   cpool_gp_entry_getattr(void *ins, int gid, struct scheduler_attr *attr);
+int   cpool_gp_entry_set_oaattr(void *ins, int gid, struct cpool_oaattr *attr);
+int   cpool_gp_entry_get_oaattr(void *ins, int gid, struct cpool_oaattr *attr);
 void  cpool_gp_entry_throttle_ctl(void *ins, int gid, int enable);
 int   cpool_gp_entry_throttle_wait(void *ins, int gid, long ms);
 int   cpool_gp_entry_remove_all(void *ins, int gid, int dispatched_by_pool);

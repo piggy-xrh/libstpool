@@ -384,9 +384,11 @@ int
 cpool_rt_task_queue(void *ins, ctask_t *ptask)
 {
 	uint8_t f_stat;
+	int drain = 0;
 	int e, reschedule = 0;
 	cpool_rt_t *rtp = ins;
-	
+	ctask_t *rm = NULL;
+
 	/**
 	 * FIX BUGS: If user calls @stpool_task_queue in the Walk functions,
 	 * it'll take us into crash if the app is linked with the debug library.
@@ -413,28 +415,64 @@ cpool_rt_task_queue(void *ins, ctask_t *ptask)
 		return e;
 	}
 		
-	if (!reschedule) {
-		OSPX_pthread_mutex_lock(&rtp->core->mut);
-		/**
-		 * Queue the task 
-		 */
-		if (rtp->lflags & eFUNC_F_PRIORITY)
-			__cpool_com_priq_insert(&rtp->c, ptask);
-		else
-			list_add_tail(&ptask->link, &rtp->ready_q);
+	if (reschedule) {
+		assert (ptask->f_stat & eTASK_STAT_F_WPENDING);
+		return 0;
+	}
+	
+	OSPX_pthread_mutex_lock(&rtp->core->mut);
+	/** 
+	 * Overload check
+	 */
+	 if (rtp->eoa != eIFOA_none && rtp->task_threshold > 0 && 
+		rtp->core->npendings > rtp->task_threshold) {
+		switch (rtp->eoa) {
+		case eIFOA_discard:
+			OSPX_pthread_mutex_unlock(&rtp->core->mut);
+			return eERR_OVERLOADED;
+		case eIFOA_drain:
+			drain = 1;
+			break;
+		}
+	}
+
+	/**
+	 * Queue the task 
+	 */
+	if (rtp->lflags & eFUNC_F_PRIORITY) {
+		if (drain) 
+			rm = __cpool_com_priq_pop(&rtp->c);	
+		__cpool_com_priq_insert(&rtp->c, ptask);
+	} else {
+		if (drain) {
+			rm = list_first_entry(&rtp->ready_q, ctask_t, link);
+			list_del(&rm->link);
+		} 
+		list_add_tail(&ptask->link, &rtp->ready_q);
+	}
+	
+	if (drain) {
+		if (rm->task_err_handler) {
+			rm->f_vmflags |= (eTASK_VM_F_REMOVE_BYPOOL|eTASK_VM_F_DRAINED);
+			list_add_tail(&rm->link, &rtp->core->dispatch_q);
+			++ rtp->core->n_qdispatchs;
+		} else 
+			smcache_addl_dir(rtp->core->cache_task, rm);
+	} else 
 		++ rtp->core->npendings;
-		
-		/**
-		 * Notify the Core to schedule the tasks
-		 */
+	
+	/**
+	 * Notify the Core to schedule the tasks
+	 */
+	 if (likely(!drain)) {
 		if (rtp->lflags & eFUNC_F_DYNAMIC_THREADS) {
 			if (cpool_core_need_ensure_servicesl(rtp->core) && !rtp->core->paused)
 				cpool_core_ensure_servicesl(rtp->core, NULL);
 		
 		} else if (cpool_core_waitq_sizel(rtp->core) && !rtp->core->paused)
 			cpool_core_wakeup_n_sleeping_threadsl(rtp->core, 1);
-		OSPX_pthread_mutex_unlock(&rtp->core->mut);
 	}
+	OSPX_pthread_mutex_unlock(&rtp->core->mut);
 	
 	return 0;
 }

@@ -26,6 +26,24 @@ __cpool_rt_stat_desc(struct cpool_stat *stat)
 		return "ACTIVE";
 }
 
+void   
+cpool_rt_set_oaattr(void * ins, struct cpool_oaattr *attr)
+{
+	cpool_rt_t *rtp = ins;
+	
+	rtp->task_threshold = attr->task_threshold;
+	rtp->eoa = attr->eifoa;
+}
+
+void   
+cpool_rt_get_oaattr(void * ins, struct cpool_oaattr *attr)
+{
+	cpool_rt_t *rtp = ins;
+	
+	attr->task_threshold = rtp->task_threshold;
+	attr->eifoa = rtp->eoa;
+}
+	
 char *
 cpool_rt_scheduler_map_dump(cpool_core_t *core, char *buff, size_t bufflen)
 {

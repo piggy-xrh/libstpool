@@ -33,6 +33,8 @@ cpool_rt_core_ctor(void *priv)
 		return -1;
 	}
 	rtp->cond_sync = rtp->cond_event = rtp->cond_task = &rtp->cond_com;
+	rtp->task_threshold = -1;
+	rtp->eoa = eIFOA_none;
 
 	/**
 	 * We create the our objpool to provide cache services
@@ -235,16 +237,21 @@ cpool_rt_core_dynamic_gettask(void *priv, thread_t *self)
 long 
 cpool_rt_core_err_reasons(basic_task_t *ptask)
 {
+	long reasons = 0;
+	
 	assert (TASK_CAST_FAC(ptask)->f_vmflags & eTASK_VM_F_REMOVE_FLAGS);
 	
-	if (likely(!(TASK_CAST_FAC(ptask)->f_vmflags & eTASK_VM_F_POOL_DESTROYING)))
-		return eErr_removed_byuser;
+	if (TASK_CAST_FAC(ptask)->f_vmflags & eTASK_VM_F_DRAINED)
+		reasons |= eErr_pool_overloaded;
 
-	/**
-	 * We remove the flags
-	 */
-	TASK_CAST_FAC(ptask)->f_vmflags &= ~eTASK_VM_F_POOL_DESTROYING;
-	return eErr_pool_destroying;
+	if (likely(!(TASK_CAST_FAC(ptask)->f_vmflags & eTASK_VM_F_POOL_DESTROYING)))
+		reasons |= eErr_removed_byuser;
+	else {
+		reasons |= eErr_pool_destroying;
+		TASK_CAST_FAC(ptask)->f_vmflags &= ~(eTASK_VM_F_POOL_DESTROYING|eTASK_VM_F_DRAINED);
+	}
+
+	return reasons;
 }
 
 int
@@ -259,6 +266,7 @@ cpool_rt_core_gettask(void *priv, thread_t *self)
 	OSPX_pthread_mutex_lock(&rtp->core->mut);
 	if (rtp->core->n_qdispatchs) {
 		__cpool_com_get_dispatch_taskl(rtp->core, self, rtp->core->max_tasks_qdispatching);
+		
 		OSPX_pthread_mutex_unlock(&rtp->core->mut);
 
 		self->task_type = TASK_TYPE_DISPATCHED;

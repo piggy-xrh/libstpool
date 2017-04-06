@@ -60,6 +60,7 @@ static struct eCAPs_conv_table {
    {"eCAP_F_TRACE",       	  eCAP_F_TRACE,           eFUNC_F_TRACEABLE},
    {"eCAP_F_WAIT_ANY",        eCAP_F_WAIT_ANY,        0},
    {"eCAP_F_WAIT_ALL",        eCAP_F_WAIT_ALL,        0},
+   {"eCAP_F_OVERLOAD",        eCAP_F_OVERLOAD,        0},
    {"eCAP_F_DISABLEQ",        eCAP_F_DISABLEQ,        eFUNC_F_DISABLEQ},
    {"eCAP_F_REMOVE_BYPOOL",   eCAP_F_REMOVE_BYPOOL,   0},
    {"eCAP_F_ROUTINE",         eCAP_F_ROUTINE,         0},
@@ -72,6 +73,7 @@ static struct eCAPs_conv_table {
    {"eCAP_F_GROUP_WAIT_ANY",  eCAP_F_GROUP_WAIT_ANY,  0},
    {"eCAP_F_GROUP_WAIT_ALL",  eCAP_F_GROUP_WAIT_ALL,  0},
    {"eCAP_F_GROUP_SUSPEND",   eCAP_F_GROUP_SUSPEND,   0},
+   {"eCAP_F_GROUP_OVERLOAD",  eCAP_F_GROUP_OVERLOAD,  0},
 };
 
 static inline int
@@ -119,6 +121,9 @@ __enum_CAPs2(long efuncs, const cpool_method_t *const method, int *nfuncs)
 	if (method->pm.wait_any)
 		libeCAPs |= eCAP_F_WAIT_ANY;
 	
+	if (method->pm.set_oaattr)
+		libeCAPs |= eCAP_F_OVERLOAD;
+	
 	if (method->tskm.task_wait_any)
 		libeCAPs |= eCAP_F_TASK_WAIT_ANY;
 	
@@ -137,6 +142,9 @@ __enum_CAPs2(long efuncs, const cpool_method_t *const method, int *nfuncs)
 		
 		if (method->pmex.group_suspend)
 			libeCAPs |= eCAP_F_GROUP_SUSPEND;
+		
+		if (method->pmex.group_set_oaattr)
+			libeCAPs |= eCAP_F_GROUP_OVERLOAD;
 
 		if (nfuncs)
 			*nfuncs += __count_funcs((int *)&method->pmex, sizeof(method->pmex)/sizeof(void *));

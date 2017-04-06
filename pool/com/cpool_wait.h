@@ -15,7 +15,8 @@
 
 #define M_WAIT "WAIT"
 
-struct WWAKE_requester {
+struct WWAKE_requester 
+{
 	int id;
 	int b_interrupted;
 	struct list_head link;

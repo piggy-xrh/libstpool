@@ -165,13 +165,13 @@ cpool_core_thread_status_changel(cpool_core_t *core, thread_t *self, long status
 #endif
 #ifndef NDEBUG
 		++ self->ntasks_processed;
-#endif		
 		/**
 		 * We do not need to check @__curtask at present. 
          * so it is not neccessary to reset it to waste our
 		 * CPU. 
 		 */
-		//__curtask = NULL;
+		__curtask = NULL;
+#endif		
 		break;
 	case THREAD_STAT_FREE: 
 		break;

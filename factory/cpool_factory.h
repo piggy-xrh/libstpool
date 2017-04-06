@@ -14,28 +14,40 @@
 #include "list.h"
 #include "cpool_method.h"
 
-enum {
+enum 
+{
 	/**
-	 * The task is removed by user
+	 * The task is removed from the pool for some reasons
 	 */
-	eErr_removed_byuser = 0x1,
+	eErr_removed_byuser = 0x01,
 	
 	/**
-	 * The task is removed by the library since the pool has been marked 
-	 * suspended and it is being destroyed
+	 * The task can not been executed since the pool has been marked 
+	 * suspended and the pool itself is being destroyed
 	 */
-	eErr_pool_destroying = 0x2,
+	eErr_pool_destroying = 0x02,
 	
 	/**
-	 * The task is removed by the library since The group is being destroyed
+	 * The task can not been executed since the group is being destroyed
 	 */
-	eErr_group_destroying = 0x4,
+	eErr_group_destroying = 0x04,
+	
+	/**
+	 * The task can not been executed because of the pool's overload
+	 */
+	eErr_pool_overloaded = 0x08,
+	
+	/**
+	 * The task can not been executed because of the group's overload
+	 */
+	eErr_group_overloaded = 0x10
 };
 
 /**
  * Status of the task
  */
-enum {
+enum 
+{
 	/**
 	 * Task is in the pending queue
 	 */
@@ -64,7 +76,8 @@ enum {
 };
 
 /** Flags of the task object */
-enum {
+enum 
+{
 	/**
 	 * \@task_run has been executed 
 	 *
@@ -148,10 +161,16 @@ enum {
 	 * The task has been marked detached by Method::task_detach
 	 */
 	eTASK_VM_F_DETACHED = 0x4000,
+	
+	/**
+	 * The task was removed from the pool since the pool was overloaded
+	 */
+	eTASK_VM_F_DRAINED  = 0x8000,
 };
 
 /** The policy to schedule the taskA */
-enum {
+enum 
+{
 	/**
 	 * If there are tasks who has the same priority with taskA, 
 	 * the taskA will be scheduled prior to all of them 
@@ -166,7 +185,8 @@ enum {
 };
 
 /** The definition of the private data of the task object */
-struct ctask {
+struct ctask 
+{
 	/**
 	 * A const string to describle the task 
 	 *
@@ -277,7 +297,8 @@ struct ctask {
 #define TASK_CAST_FAC(ptask) ((ctask_t *)(ptask))
 
 /** Error code sets */
-enum {	
+enum 
+{	
 	/**
 	 * System is out of memeory 
 	 */
@@ -341,6 +362,11 @@ enum {
 	 * The group is being destroyed
 	 */
 	eERR_GROUP_DESTROYING = 12,
+	
+	/**
+	 * The group is overloaded
+	 */
+	eERR_GROUP_OVERLOADED = 19,
 	/*----------------------------------------------------------------*/
 
 	/**
@@ -374,6 +400,12 @@ enum {
 	 * (The errno has been set properly)
 	 */
 	eERR_errno  = 17,
+	
+	/**
+	 * The task can not be delived into the pool since the pool
+	 * is overloaded now
+	 */
+	eERR_OVERLOADED = 18,
 };
 
 enum ep_TH
@@ -401,7 +433,8 @@ enum ep_TH
 	ep_TH_SCHED_OTHER
 };
 
-struct thread_attr {
+struct thread_attr 
+{
 	/**
 	 * Stack size (0:default) 
 	 */
@@ -418,7 +451,8 @@ struct thread_attr {
 	int sche_priority;
 };
 
-struct scheduling_attr {
+struct scheduling_attr 
+{
 	/**
 	 * The max scheduling tasks of the thread's local queue
 	 */
@@ -433,7 +467,8 @@ struct scheduling_attr {
 /**
  * The scheduling attribute of the group.
  */
-struct scheduler_attr {
+struct scheduler_attr 
+{
 	/**
 	 * The limit parralle tasks. 
 	 *
@@ -471,7 +506,8 @@ struct scheduler_attr {
 /**
  * The status of the group.
  */
-struct ctask_group_stat {
+struct ctask_group_stat 
+{
 	/** 
 	 * The group id returned by @ref stpool_group_create
 	 */
@@ -542,8 +578,44 @@ struct ctask_group_stat {
 	int ndispatchings;
 };
 
+/** The overload actions */
+enum
+{
+  /**
+   * The newer task will be delived into the pending queue (default policy)
+   */
+  eIFOA_none,
+
+  /**
+   * The newer task can not be delived into the pool
+   */
+  eIFOA_discard,
+
+  /**
+   * The newer task will be delived into the pending queue, and menwhile the
+   * the oldest tasks existing in the pending queue will be removed
+   */
+  eIFOA_drain
+};
+
+/** The overload policies */
+struct cpool_oaattr
+{
+	/**
+	 * The threshold of the task 
+	 */
+	int task_threshold;
+	
+	/** 
+	 * The action that the library should execute when the task number arrives
+	 * at the threshold
+	 */
+	int eifoa;
+};
+
 /** Status of the pool */
-struct cpool_stat {
+struct cpool_stat 
+{
 	/**
 	 * A const string to describle the pool 
 	 */
@@ -708,7 +780,8 @@ typedef struct cpool_method {
 } cpool_method_t;
 
 /** The function masks */
-enum {
+enum 
+{
 	/**
 	 * The pool support the ADVANCE methods
 	 */
@@ -746,7 +819,8 @@ enum {
 };
 
 /** The definition of the pool object */
-struct cpool {
+struct cpool 
+{
 	/**
 	 * The supported method masks of the instance object 
 	 */

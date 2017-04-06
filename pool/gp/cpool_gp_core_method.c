@@ -173,10 +173,12 @@ cpool_gp_core_err_reasons(basic_task_t *ptask)
 	if (TASK_CAST_FAC(ptask)->f_vmflags & eTASK_VM_F_GROUP_DESTROYING)
 		e |= eErr_group_destroying;
 	
+	if (TASK_CAST_FAC(ptask)->f_vmflags & eTASK_VM_F_DRAINED)
+		e |= eErr_group_overloaded;
 	/**
 	 * We remove the flags
 	 */
-	TASK_CAST_FAC(ptask)->f_vmflags &= ~(eTASK_VM_F_POOL_DESTROYING|eTASK_VM_F_GROUP_DESTROYING);
+	TASK_CAST_FAC(ptask)->f_vmflags &= ~(eTASK_VM_F_POOL_DESTROYING|eTASK_VM_F_GROUP_DESTROYING|eTASK_VM_F_DRAINED);
 	if (!e)
 		return eErr_removed_byuser;
 	

@@ -167,6 +167,8 @@ cpool_gp_entry_create(void * ins, const char *desc, int priq_num, int suspend)
 	entry->lflags &= ~SLOT_F_FREE;
 	entry->ntasks_processed = 0;
 	entry->tsk_need_notify = entry->tsk_any_wait = 0;
+	entry->task_threshold = -1;
+	entry->eoa = eIFOA_none;
 	-- gpool->nfrees;
 
 	assert (!entry->nrunnings && !entry->ndispatchings &&
@@ -645,6 +647,50 @@ cpool_gp_entry_getattr(void * ins, int id, struct scheduler_attr *attr)
 
 			if (attr)
 				__cpool_gp_entry_get_attrl(gpool, gpool->entry + id, attr);
+		}
+		OSPX_pthread_mutex_unlock(&gpool->core->mut);
+	}
+
+	return ok ? eERR_GROUP_NOT_FOUND : 0;
+}
+
+int
+cpool_gp_entry_set_oaattr(void *ins, int id, struct cpool_oaattr *attr)
+{
+	int ok = 0;
+	cpool_gp_t *gpool = ins;
+
+	if (id >= 0 && id < gpool->num) {
+		OSPX_pthread_mutex_lock(&gpool->core->mut);
+		if (id < gpool->num && IS_VALID_ENTRY(&gpool->entry[id])) {
+			ok = 1;
+
+			if (attr) {
+				gpool->entry[id].task_threshold = attr->task_threshold;
+				gpool->entry[id].eoa = attr->eifoa;
+			}
+		}
+		OSPX_pthread_mutex_unlock(&gpool->core->mut);
+	}
+
+	return ok ? eERR_GROUP_NOT_FOUND : 0;
+}
+
+int
+cpool_gp_entry_get_oaattr(void *ins, int id, struct cpool_oaattr *attr)
+{
+	int ok = 0;
+	cpool_gp_t *gpool = ins;
+
+	if (id >= 0 && id < gpool->num) {
+		OSPX_pthread_mutex_lock(&gpool->core->mut);
+		if (id < gpool->num && IS_VALID_ENTRY(&gpool->entry[id])) {
+			ok = 1;
+
+			if (attr) {
+				attr->task_threshold = gpool->entry[id].task_threshold;
+				attr->eifoa = gpool->entry[id].eoa;
+			}
 		}
 		OSPX_pthread_mutex_unlock(&gpool->core->mut);
 	}

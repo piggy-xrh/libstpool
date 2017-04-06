@@ -20,7 +20,8 @@ typedef struct cpool_core cpool_core_t;
 typedef struct cpool_thread thread_t;
 
 /** error Reasons for task */
-enum {
+enum 
+{
 	eReason_ok = 0x01,
 	eReason_removed = 0x02,
 	eReason_core_destroying = 0x04,
@@ -100,7 +101,8 @@ enum {
 };
 
 /** Task type */
-enum {
+enum 
+{
 	/** 
 	 * A task retreived by \@cpool_core_method::gettask
 	 */
@@ -124,7 +126,8 @@ typedef struct cond_attr {
 } cond_attr_t;
 
 /** The definition of the thread object */
-struct cpool_thread {
+struct cpool_thread 
+{
 	OSPX_pthread_t thread_id;
 	struct list_head thq;
 	struct list_head link_free;
@@ -223,7 +226,8 @@ typedef struct cache_attr {
 } cache_attr_t;
 
 /** The definition of the pool object */
-struct cpool_core {
+struct cpool_core 
+{
 	const char *desc;
 	time_t start;
 
@@ -302,7 +306,8 @@ struct cpool_core {
 /**
  * The status of the Core
  */
-struct cpool_core_stat {
+struct cpool_core_stat 
+{
 	const char *desc;
 	time_t start;
 	long status;

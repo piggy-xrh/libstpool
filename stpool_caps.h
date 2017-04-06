@@ -23,7 +23,8 @@
  * needed fetures masks to @ref stpool_create, this API may return @ref POOL_ERR_NSUPPORT if 
  * the underlying pool object does not support it.
  */
-enum {
+enum 
+{
 	/**
 	 * The working threads will be created and destroyed by the pool automatically
 	 */
@@ -70,6 +71,11 @@ enum {
 	 * The pool must support @ref \@stpool_wait_all
 	 */
 	eCAP_F_WAIT_ALL = 0x80L,
+	
+	/**
+	 * The pool must support @ref \@stpool_set_overload_attr, @ref \@stpool_get_overload_attr
+	 */
+	eCAP_F_OVERLOAD = 0x0100L,
 
 	/**
 	 * TASK_VMMARK_ENABLE_QUEUE and TASK_VMARK_DISABLE_QUEUE must be avaliable
@@ -83,7 +89,7 @@ enum {
 	 * in the background if the task has been removed from the pending queue by user
 	 */
 	eCAP_F_REMOVE_BYPOOL = 0x2000L,
-
+		
 	/**
 	 * The pool must support the routine tasks 
 	 *
@@ -160,14 +166,19 @@ enum {
 	eCAP_F_GROUP_SUSPEND  = 0x100000L,
 	
 	/**
+	 * The pool must support @ref \@stpool_group_set_overload_attr, @ref \@stpool_group_get_overload_attr
+	 */ 
+	eCAP_F_GROUP_OVERLOAD = 0x200000L,
+	
+	/**
 	 * The capabilities sets
 	 */
 	eCAP_F_ALL = eCAP_F_DYNAMIC|eCAP_F_FIXED|eCAP_F_PRIORITY|eCAP_F_THROTTLE|
-				 eCAP_F_SUSPEND|eCAP_F_WAIT_ANY|eCAP_F_WAIT_ALL|eCAP_F_WAIT_ANY|eCAP_F_TRACE|
+				 eCAP_F_SUSPEND|eCAP_F_WAIT_ANY|eCAP_F_WAIT_ALL|eCAP_F_WAIT_ANY|eCAP_F_OVERLOAD|eCAP_F_TRACE|
 			     eCAP_F_ROUTINE|eCAP_F_CUSTOM_TASK|eCAP_F_TASK_WAIT|eCAP_F_TASK_WAIT_ALL|
 				 eCAP_F_DISABLEQ|eCAP_F_REMOVE_BYPOOL|
 				 eCAP_F_GROUP|eCAP_F_GROUP_THROTTLE|eCAP_F_GROUP_WAIT_ANY|eCAP_F_GROUP_WAIT_ALL|
-				 eCAP_F_GROUP_SUSPEND
+				 eCAP_F_GROUP_SUSPEND|eCAP_F_GROUP_OVERLOAD
 };
 
 

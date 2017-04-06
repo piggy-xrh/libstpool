@@ -17,7 +17,8 @@
 
 typedef struct cpool_rt cpool_rt_t;
 
-struct cpool_rt {
+struct cpool_rt 
+{
 	/**
 	 * The Core
 	 */
@@ -73,6 +74,12 @@ struct cpool_rt {
 	 * A common condition variable
 	 */
 	OSPX_pthread_cond_t cond_com;
+	
+	/**
+	 * Overload policy
+	 */
+	 int task_threshold;
+	 int eoa;
 };
 
 #endif

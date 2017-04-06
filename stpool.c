@@ -532,6 +532,8 @@ stpool_strerror(int error)
 		"unkown",
 		"the servering pool does not support the operation",
 		"unkown",
+		"the task is enjected since the pool is overloaded",
+		"the task is enjected since the group that the task belongs to is overloaded"
 	};
 
 	if (error >= 0  && error <= sizeof(errmsgs)/sizeof(*errmsgs)) {
@@ -753,6 +755,22 @@ EXPORT int
 stpool_flush(stpool_t *pool) 
 {
 	TRY_Invoke_return_res(0, flush, pool, pm);
+}
+
+EXPORT void 
+stpool_set_overload_attr(stpool_t *pool, struct oaattr *attr)
+{
+	TRY_Invoke(set_oaattr, pool, pm, (struct cpool_oaattr *)attr);
+}
+
+EXPORT struct oaattr *
+stpool_get_overload_attr(stpool_t *pool, struct oaattr *attr)
+{
+	if (!Invokable(get_oaattr, pool, pm))
+		return NULL;
+	
+	Invoke(get_oaattr, pool, pm, (struct cpool_oaattr *)attr);
+	return attr;
 }
 
 EXPORT struct pool_stat *

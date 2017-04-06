@@ -52,7 +52,8 @@ enum ep_POLICY
 	ep_OTHER
 };
 
-typedef struct {
+typedef struct 
+{
 	/** The thread is joinable */
 	int joinable;
 

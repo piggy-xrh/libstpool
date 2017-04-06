@@ -21,13 +21,13 @@ __cpool_gp_task_pri_queuel(cpool_gp_t *gpool, ctask_entry_t *entry, ctask_trace_
 {
 	ptask->seq = ++ gpool->seq;
 	ptask->f_stat = eTASK_STAT_F_WAITING;
+	++ entry->npendings;
 	
 	/**
 	 * Add the task into the priority queue
 	 */
 	__cpool_com_priq_insert(&entry->c, (ctask_t *)ptask);
 	entry->top = TASK_CAST_TRACE(__cpool_com_priq_top(&entry->c));
-	++ entry->npendings;
 }
 
 
@@ -187,6 +187,44 @@ reget:
 	}
 	
 	return ptask;
+}
+
+static inline void
+__cpool_gp_task_pop_and_insertl(cpool_gp_t *gpool, ctask_entry_t *entry, ctask_trace_t *ptask)
+{
+	ctask_t *rm = __cpool_com_priq_pop(&entry->c);
+	
+	__cpool_gp_task_pri_queuel(gpool, entry, ptask);
+	-- entry->npendings;
+
+	if (!rm->task_err_handler) {
+		ctask_trace_t *trace = TASK_CAST_TRACE(rm);
+
+		/**
+		 * Move it from the trace queue
+		 */
+		list_del(&trace->trace_link);
+		++ entry->ntasks_processed;
+		
+		/**
+		 * Notify user
+		 */ 
+		__cpool_gp_w_wakeup_taskl(gpool, entry, trace);
+		if (eTASK_VM_F_LOCAL_CACHE & trace->f_vmflags && !trace->ref) 
+			smcache_addl_dir(gpool->core->cache_task, trace);
+		else
+			trace->f_stat = 0;
+		
+	} else {
+		/**
+		 * Reset its status
+		 */
+		rm->f_stat = eTASK_STAT_F_DISPATCHING;
+		rm->f_vmflags |= (eTASK_VM_F_REMOVE_BYPOOL|eTASK_VM_F_DRAINED);
+		list_add_tail(&rm->link, &gpool->core->dispatch_q);
+		++ gpool->core->n_qdispatchs;
+		++ entry->ndispatchings;
+	}	
 }
 
 static inline void

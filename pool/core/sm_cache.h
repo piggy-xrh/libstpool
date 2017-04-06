@@ -21,7 +21,8 @@ extern "C" {
 
 #define FUNC_ALWAYS_NEED_DESTROY ((int (*)(void *, void *))-1)
 
-struct smlink {
+struct smlink 
+{
 	struct smlink *next;
 };
 

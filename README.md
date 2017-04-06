@@ -11,17 +11,17 @@ libstpool是一个开源的轻便的跨平台的动态c/c++线程池，任务池
 * 静态线程池                    (支持)
 * `任务分组并对组进行隔离控制`  (支持)
 * 线程池数目随时增减控制        (支持)
-* 任务过载控制                  (即将支持)
+* 任务过载控制                  (支持)
 
 .编译安装
 ----
 >Linux/MAC
-  * ./configure --prefix=/usr/
+  * ./configure --prefix=/usr/local
   * make -j2 && make install
 
 >windows
   * 使用vs打开stpool_win_proj/stpool.sln
-  * 编译libmsglog工程
+  * 编译msglog工程
   * 编译libstpool工程
   * 最后编译测试demo
 
@@ -31,7 +31,12 @@ libstpool是一个开源的轻便的跨平台的动态c/c++线程池，任务池
   * make -j2 && make install
 
 >NDK
- 
+ * 执行./configure生成配置 os/os_config.h
+ * 打开os/os_config.h 注释掉ndk不支持的属性配置, 比如:  
+ //#define HAS_PTHREAD_CONDATTR_SETCLOCK 1  
+ //#define HAS_PTHREAD_ATTR_GETINHERITSCHED 1
+ * 执行ndk-build, 生成的库将会保成在obj下
+
 .库说明
 ----
 头文件: 

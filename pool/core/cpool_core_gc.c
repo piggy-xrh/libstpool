@@ -69,7 +69,7 @@ cpool_core_GC_accessl(cpool_core_t *core, thread_t *self)
 	return !core->GC || core->GC == self;
 }
 
-inline int
+static inline int
 cpool_core_GC_expire(cpool_core_t *core, thread_t *self)
 {
 	long us = us_endr(core->us_last_gcclock);
@@ -77,7 +77,7 @@ cpool_core_GC_expire(cpool_core_t *core, thread_t *self)
 	return (us + 50000) >= core->us_gc_left_timeo || !us;
 }
 
-inline int
+static inline int
 cpool_core_GC_joinl(cpool_core_t *core, thread_t *self) 
 {
 	assert (!(self->flags & THREAD_STAT_GC));
@@ -102,7 +102,7 @@ cpool_core_GC_joinl(cpool_core_t *core, thread_t *self)
 	return 1;
 }
 
-inline int
+static inline int
 cpool_core_GC_continuel(cpool_core_t *core, thread_t *self)
 {
 	int ncached = smcache_nl(core->cache_task);
