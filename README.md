@@ -16,7 +16,7 @@ libstpool是一个开源的轻便的跨平台的动态c/c++线程池，任务池
 .编译安装
 ----
 >Linux/MAC
-  * ./configure --prefix=/usr/local
+  * ./configure 
   * make -j2 && make install
 
 >windows
@@ -37,6 +37,11 @@ libstpool是一个开源的轻便的跨平台的动态c/c++线程池，任务池
  //#define HAS_PTHREAD_ATTR_GETINHERITSCHED 1
  * 执行ndk-build, 生成的库将会保成在obj下
 
+>安装libstpoolc++ (对libstpool的简单的c++封装)
+ * 如上先编译安装libstpool
+ * 进入c++目录，执行./configure && make install 会默认安装libstpoolc++到/usr/local
+ * 进入examples-c++ 编译运行测试demo
+
 .库说明
 ----
 头文件: 
@@ -45,6 +50,7 @@ libstpool是一个开源的轻便的跨平台的动态c/c++线程池，任务池
 	stpool_caps.h   (能力集定义头文件)
 	stpool.h        (基础API头文件)
 	stpool_group.h  (针对任务分组的API头文件)
+	stpoolc++.h     (c++的封装头文件)
 
 库文件:
 
@@ -55,6 +61,9 @@ libstpool是一个开源的轻便的跨平台的动态c/c++线程池，任务池
 
 	  libstpool.a     (生成的libstpool静态库)
 	  libstpool.so    (生成的libstpool动态库)
+	  
+	  libstpoolc++.a  (生成的libstpool c++ 静态库)
+	  libstpoolc++.so (生成的libstpool c++ 动态库)
 
   使用VS生成的库 (windows系统)
 

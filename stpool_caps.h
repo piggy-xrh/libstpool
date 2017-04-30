@@ -102,6 +102,10 @@ enum
 	 * stpool_task_new
 	 */
 	eCAP_F_CUSTOM_TASK = 0x100000L,
+	
+	/**
+	 * For backwards compatablity
+	 */
 	#define eCAP_F_TASK_EX eCAP_F_CUSTOM_TASK 
 	
 	/**

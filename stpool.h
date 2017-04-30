@@ -403,7 +403,7 @@ enum
 struct oaattr
 {
 	/**
-	 * The threshold of the task 
+	 * The threshold of the task existing in the pending queue
 	 */
 	int task_threshold;
 	

@@ -66,7 +66,7 @@ static struct eCAPs_conv_table {
    {"eCAP_F_ROUTINE",         eCAP_F_ROUTINE,         0},
    {"eCAP_F_CUSTOM_TASK",     eCAP_F_CUSTOM_TASK,     eFUNC_F_TASK_EX},
    {"eCAP_F_TASK_WAIT",       eCAP_F_TASK_WAIT,   	  eFUNC_F_TASK_WAITABLE},
-   {"eCAP_F_TASK_WAIT_ALL",   eCAP_F_TASK_WAIT_ALL,   0},
+   {"eCAP_F_TASK_WAIT_ALL",   eCAP_F_TASK_WAIT_ALL,   eFUNC_F_TASK_WAITABLE},
    {"eCAP_F_TASK_WAIT_ANY",   eCAP_F_TASK_WAIT_ANY,   0},
    {"eCAP_F_GROUP",           eCAP_F_GROUP,           eFUNC_F_ADVANCE},
    {"eCAP_F_GROUP_THROTTLE",  eCAP_F_GROUP_THROTTLE,  0},

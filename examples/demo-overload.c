@@ -59,7 +59,7 @@ int main()
 	}
 	
 	/**
-	 *  Set the task threshold to be 3
+	 *  Set the task threshold to 3
 	 */
 	attr.task_threshold = 3;
 	attr.eoa = eOA_drain;
@@ -83,7 +83,7 @@ int main()
 	stpool_wait_all(pool, -1);
 	
 	/**
-	 * Release the pool after its have done all of the tasks
+	 * Release the pool after its having done all of the tasks
 	 */
 	puts("press any key to release the pool ...\n");
 	getchar();

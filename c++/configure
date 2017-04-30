@@ -1,0 +1,156 @@
+#!/bin/bash
+#piggy_xrh@163.com
+
+function showUsage()
+{
+	echo "--help                  display this help and exit"
+	echo "--host=HOST             cross-compile to build programs to run on HOST [BUILD]"
+	echo "--stpool-dir=DIR        set the installed dir of the libstpool"
+}
+
+function cacheClean()
+{
+	rm .test .test.c -fr 2>/dev/null
+}
+
+function errExit()
+{
+	cacheClean
+	exit 1
+}
+
+# reset the config
+# set the default env
+VAR_cross=
+VAR_prefix=/usr/local
+VAR_libmode=Release
+VAR_strip=yes
+VAR_cflags=
+
+# clear the cache
+cacheClean
+
+options=`getopt -a -q -oh -l help,prefix:,enable-debug-mode,host: -- "$@" 2>/dev/null`
+eval set -- "$options"
+
+# parse the parameters
+while [ -n "$1" ]; do
+	case $1 in
+	--help)
+		showUsage && exit 1;;
+
+	--stpool-dir)
+		VAR_prefix=$2;
+		if [[ "${VAR_prefix:0:1}" != "/" ]]; then
+			VAR_prefix=$PWD/$VAR_prefix
+		fi
+		shift  
+		;;
+	
+	--enable-debug-mode)
+		VAR_libmode=debug;
+		VAR_strip=no;
+		;;
+	
+	--host)
+		VAR_cross=$2;
+		shift
+		;;
+	--)
+		;;
+	?)
+		echo "Unsupported options: $1" && exit 1;;
+	esac
+	shift
+done
+
+# check the debug mode
+if [ $VAR_libmode == "debug" ]
+	then
+		VAR_cflags+="-g -D_DEBUG -D_GNU_SOURCE -fPIC"
+	else
+		VAR_cflags+="-O2 -DNDEBUG -D_GNU_SOURCE -fPIC"
+fi
+
+# check the cross tools
+if [ ! -z ${VAR_cross} ]; then
+	echo "checking cross tools ..."
+	[ -z `which ${VAR_cross}gcc`   ]  && echo "- no ${VAR_cross}gcc"   && exit 1
+	[ -z `which ${VAR_cross}ar`    ]  && echo "- no ${VAR_cross}ar"    && exit 1
+	[ -z `which ${VAR_cross}strip` ]  && echo "- no ${VAR_cross}strip" && exit 1
+	echo " yes"
+fi
+echo "complier tools: ${VAR_corss}gcc"
+
+# Check the os width
+if [ -z ${VAR_cross} ]; then
+echo -n "checking os width ..."
+cat << _CODE_EOF > .test.c
+#include <stdio.h>
+
+int main()
+{
+	return sizeof(long) == 8 ? 0 : 1;
+}
+_CODE_EOF
+${VAR_cross}gcc .test.c -o .test && ./.test
+if test $? -eq 0
+	then
+		VAR_cflags+=" -DOS_W_64 -m64"
+		echo " 64"
+	else
+		VAR_cflags+=" -DOS_W_32"
+		echo " 32"
+fi
+else
+read -p "select the os bit width(32/64): " _W
+if [ ${_W} == 64 ]; then
+	VAR_cflags+="-DOS_W_64 -m64"
+else
+	VAR_cflags+="-DOS_W_32"
+fi
+fi
+
+# Check <stdint.h>
+echo -n "checking libstpool ... "
+cat << _CODE_EOF >.test.c
+#include <stdio.h>
+#include <stpool/stpool.h>
+
+int main()
+{	
+	puts(stpool_version());
+	return 0;
+}
+_CODE_EOF
+${VAR_cross}gcc -I$VAR_prefix .test.c -lstpool -lmsglog  -lrt -lpthread -o .test >/dev/null 2>&1
+if test $? -eq 0
+	then
+		echo " yes"
+	else
+		echo " no"
+fi
+
+# generate complier.mk
+cat << _MK_EOF >complier.mk
+CROSS :=$VAR_cross
+CC    :=\$(CROSS)gcc
+CPP   :=\$(CROSS)g++
+AR    :=\$(CROSS)ar
+STRIP :=\$(CROSS)strip
+
+ARFLAGS = -rv
+STRIPFLAGS = -xX
+CFLAGS = -Wall
+CPPFLAGS = -Wall
+_MK_EOF
+
+# generate features.mk
+echo "CFLAGS+=$VAR_cflags" >features.mk || errExit
+echo -e "INSTALL_DIR=$VAR_prefix" >Makefile
+echo -e "STRIP_LIB=$VAR_strip\n" >>Makefile
+cat .help/.Makefile >> Makefile || errExit
+echo "generate Makefile succefully."
+
+# remove all temp files
+cacheClean

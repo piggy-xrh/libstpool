@@ -342,17 +342,16 @@ cpool_gp_task_detach(void * ins, ctask_t *ptask)
 	 * Check the task's reference 
 	 */
 	if (ptask0->ref) {
+		/**
+		 * We make sure that the WAIT functions work well 
+		 */
+		ptask0->f_vmflags |= eTASK_VM_F_DETACHED;
 #ifndef NDEBUG
 		MSG_log(M_GROUP, LOG_DEBUG,
 			"Waiters on %s/%p  is %d.\n",
 			ptask0->task_desc, ptask0, ptask0->ref);
 #endif
-		/**
-		 * We make sure that the WAIT functions work well 
-		 */
-		ptask0->f_vmflags |= eTASK_VM_F_DETACHED;
-		for (;ptask0->ref;) 
-			OSPX_pthread_cond_wait(gpool->entry[ptask0->gid].cond_sync, &gpool->core->mut);
+		OSPX_pthread_cond_broadcast(gpool->entry[ptask0->gid].cond_sync);
 		ptask0->f_vmflags &= ~eTASK_VM_F_DETACHED;
 	}	
 	OSPX_pthread_mutex_unlock(&gpool->core->mut);
