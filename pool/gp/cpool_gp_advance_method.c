@@ -765,7 +765,7 @@ cpool_gp_entry_remove_all(void * ins, int id, int dispatched_by_pool)
 	cpool_gp_t *gpool = ins;
 	long lflags = dispatched_by_pool ? eTASK_VM_F_REMOVE_BYPOOL : eTASK_VM_F_REMOVE;
 		
-	return cpool_gp_entry_mark_all(gpool->core, id, lflags);
+	return cpool_gp_entry_mark_all(gpool, id, lflags);
 }
 
 int   
@@ -773,7 +773,7 @@ cpool_gp_entry_mark_all(void * ins, int id, long lflags)
 {
 	cpool_gp_t *gpool = ins;
 	
-	return cpool_gp_entry_mark_cb(gpool->core, id, NULL, (void *)lflags);
+	return cpool_gp_entry_mark_cb(gpool, id, NULL, (void *)lflags);
 }
 
 int   
@@ -801,7 +801,7 @@ cpool_gp_entry_wait_all(void * ins, int id, long ms)
 {
 	cpool_gp_t *gpool = ins;
 	
-	return cpool_gp_entry_wait_cb(gpool->core, id, NULL, NULL, ms);
+	return cpool_gp_entry_wait_cb(gpool, id, NULL, NULL, ms);
 }
 
 int   
