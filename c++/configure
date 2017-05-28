@@ -22,7 +22,7 @@ function errExit()
 # reset the config
 # set the default env
 VAR_cross=
-VAR_prefix=/usr/local
+VAR_prefix=/usr
 VAR_libmode=Release
 VAR_strip=yes
 VAR_cflags=

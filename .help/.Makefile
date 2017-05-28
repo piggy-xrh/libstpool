@@ -52,7 +52,7 @@ ifeq ($(STRIP_LIB), yes)
 	$(STRIP) $(STRIPFLAGS) $@ 2>/dev/null
 endif
 
-libstpool.so:$(addprefix $(OBJS_DIR)/, $(OBJS_stpool)) 
+libstpool.so:$(addprefix $(OBJS_DIR)/, $(OBJS_stpool)) libmsglog.so
 	$(CC) --shared -o  $@ $^ 
 	chmod +x $@
 ifeq ($(STRIP_LIB), yes)

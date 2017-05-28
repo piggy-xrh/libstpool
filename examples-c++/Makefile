@@ -3,7 +3,7 @@
 all:demo
 
 demo:demo.cpp
-	g++ -o$@ $< -lstpool -lstpoolc++ -lmsglog -lpthread
+	g++ -o $@ $< -lstpool -lstpoolc++ -lmsglog -lpthread
 
 clean:
 	-@rm -f demo *.o

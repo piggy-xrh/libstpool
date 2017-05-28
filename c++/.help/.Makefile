@@ -14,6 +14,9 @@ PREPARE:
 		[ -d $$d ] || mkdir -p $$d; \
 	done
 
+../libstpool.so:
+	$(error Please compile the libstpool project fistly!)
+
 libstpoolc++.a:$(addprefix $(OBJS_dir)/, $(OBJS_stpoolc++)) 
 	$(AR) $(ARFLAGS) $@ $(filter-out ligmsglog.a, $^)
 	chmod +x $@
@@ -21,7 +24,7 @@ ifeq ($(STRIP_LIB), yes)
 	$(STRIP) $(STRIPFLAGS) $@ 2>/dev/null
 endif
 
-libstpoolc++.so:$(addprefix $(OBJS_dir)/, $(OBJS_stpoolc++)) 
+libstpoolc++.so:$(addprefix $(OBJS_dir)/, $(OBJS_stpoolc++))  ../libstpool.so
 	$(CPP) --shared -o  $@ $^ 
 	chmod +x $@
 ifeq ($(STRIP_LIB), yes)
