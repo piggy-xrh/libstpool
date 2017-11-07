@@ -187,6 +187,7 @@ ${VAR_cross}gcc .test.c -o .test -lrt 2>/dev/null
 if test $? -eq 0
 	then
 		enableConfig HAS_CLOCK_GETTIME
+		VAR_cflags+=" -DHAS_CLOCK_GETTIME"
 		echo " yes"
 	else
 		echo  " no"
