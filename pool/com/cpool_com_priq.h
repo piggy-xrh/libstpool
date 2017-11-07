@@ -46,7 +46,7 @@ __cpool_com_priq_insert0(struct list_head *q, ctask_t *ptask)
 	/**
 	 * Compare the task with the last one
 	 */
-	peek = list_first_entry(q, ctask_t, link);
+	peek = list_entry(q->prev, ctask_t, link);
 	if (ptask->pri <= peek->pri) {	
 		if ((ptask->pri < peek->pri) || (ep_BACK == ptask->pri_policy)) {
 			list_add(&ptask->link, &peek->link);
