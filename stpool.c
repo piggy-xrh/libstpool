@@ -656,7 +656,7 @@ stpool_thread_setscheattr(stpool_t *pool, struct stpool_thattr *attr)
 	 * Convert the libray attributs into the inner attributes
 	 */
 	assert (sizeof(attr0) == sizeof(*attr));
-	memcpy(attr, &attr0, sizeof(*attr));
+	memcpy(&attr0, attr, sizeof(*attr));
 				
 	TRY_Invoke(setattr, pool, pm, &attr0);
 }
@@ -672,7 +672,7 @@ stpool_thread_getscheattr(stpool_t *pool, struct stpool_thattr *attr)
 	 * Convert the attributs into the library attributes
 	 */
 	assert (sizeof(attr0) == sizeof(*attr));
-	memcpy(attr, &attr0, sizeof(*attr));
+	memcpy(&attr0, attr, sizeof(*attr));
 
 	return attr;
 }
@@ -686,7 +686,7 @@ stpool_thread_settaskattr(stpool_t *pool, struct stpool_taskattr *attr)
 	 * Convert the libray attributs into the inner attributes
 	 */
 	assert (sizeof(attr0) == sizeof(*attr));
-	memcpy(attr, &attr0, sizeof(*attr));
+	memcpy(&attr0, attr, sizeof(*attr));
 				
 	TRY_Invoke(set_schedulingattr, pool, pm, &attr0);
 }
@@ -702,7 +702,7 @@ stpool_thread_gettaskattr(stpool_t *pool, struct stpool_taskattr *attr)
 	 * Convert the attributs into the library attributes
 	 */
 	assert (sizeof(attr0) == sizeof(*attr));
-	memcpy(attr, &attr0, sizeof(*attr));
+	memcpy(&attr0, attr, sizeof(*attr));
 	
 	/**
 	 * NOTE: Currently We have not implemented the all the functions !
