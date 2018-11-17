@@ -651,7 +651,7 @@ cpool_gp_entry_getattr(void * ins, int id, struct scheduler_attr *attr)
 		OSPX_pthread_mutex_unlock(&gpool->core->mut);
 	}
 
-	return ok ? eERR_GROUP_NOT_FOUND : 0;
+	return ok ? 0: eERR_GROUP_NOT_FOUND;
 }
 
 int
