@@ -26,6 +26,7 @@
 #include <winsock2.h>
 #include <process.h>
 
+#include "ospx_config.h"
 #if defined(_HAS_STDINT_H) || defined(HAS_STDINT_H)
 #include <stdint.h>   /* For dev-c++ */
 #else 

@@ -9,8 +9,8 @@
  * 	  (Email: piggy_xrh@163.com  QQ: 1169732280)
  */
 
-#include "timer.h"
 #include "ospx.h"
+#include "timer.h"
 #include "ospx_compatible.h"
 
 uint64_t ___clock = 0;
